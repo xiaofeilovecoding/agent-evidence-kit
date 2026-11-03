@@ -119,7 +119,7 @@ def _run_config(argv: list[str]) -> int:
         if input_format is None:
             raise InputRejected("UNSUPPORTED_FORMAT")
         core = config_analyze_bytes(raw, input_format)
-    except InputRejected as rejected:
+    except ConfigInputRejected as rejected:
         _emit({"error": rejected.code}, out["format"], out["lang"], rejected.code, "config")
         return _EXIT_ERROR
     exit_code = _EXIT_FINDINGS if core["outcome"] == "needs_review" else _EXIT_OK
