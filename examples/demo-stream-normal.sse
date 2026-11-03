@@ -1,0 +1,12 @@
+: heartbeat
+
+data: {"choices": [{"index": 0, "delta": {"role": "assistant", "content": "你好"}}]}
+
+data: {"choices": [{"index": 0, "delta": {"content": "OK"}}]}
+
+data: {"choices": [], "usage": {"prompt_tokens": 1, "completion_tokens": 1}}
+
+data: {"choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}]}
+
+data: [DONE]
+

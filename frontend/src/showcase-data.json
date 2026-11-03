@@ -1,0 +1,1271 @@
+{
+  "mode": "sample-showcase",
+  "generated_with": "0.1.0",
+  "cases": [
+    {
+      "case_id": "http-residue",
+      "module": "config",
+      "input_format": "json",
+      "description": {
+        "zh-CN": "带env_vars的http服务残留提示",
+        "en": "http service with env_vars residue hint"
+      },
+      "results": {
+        "zh-CN": {
+          "card": {
+            "schema_version": 1,
+            "scope": "structure_only",
+            "language": "zh-CN",
+            "outcome": "needs_review",
+            "summary": {
+              "service_count": 1,
+              "warning_count": 2,
+              "error_count": 0
+            },
+            "services": [
+              {
+                "id": "server-1",
+                "transport": "http",
+                "fields": {
+                  "command": {
+                    "present": true,
+                    "type": "string"
+                  },
+                  "url": {
+                    "present": true,
+                    "type": "string"
+                  },
+                  "type": {
+                    "present": false,
+                    "type": null
+                  },
+                  "transport": {
+                    "present": false,
+                    "type": null
+                  },
+                  "args": {
+                    "present": true,
+                    "type": "list"
+                  },
+                  "env_vars": {
+                    "present": true,
+                    "type": "list"
+                  },
+                  "env": {
+                    "present": false,
+                    "type": null
+                  },
+                  "headers": {
+                    "present": false,
+                    "type": null
+                  }
+                },
+                "findings": [
+                  {
+                    "code": "AMBIGUOUS_TRANSPORT",
+                    "severity": "warning",
+                    "explanation": "同一服务同时声明command与url，传输方式不明确，请核对客户端实际读取的字段。"
+                  },
+                  {
+                    "code": "NOT_VALIDATED",
+                    "severity": "info",
+                    "explanation": "本工具只做结构检查，不验证客户端版本或运行兼容性；未知字段与未知枚举不回显。"
+                  },
+                  {
+                    "code": "POSSIBLE_TRANSPORT_RESIDUE",
+                    "severity": "warning",
+                    "explanation": "服务带url且同时存在command/args/env/env_vars字段，可能是从其他传输方式迁移后的残留。本工具无法确认，请自行核对，不会自动删除任何字段。"
+                  }
+                ]
+              }
+            ]
+          },
+          "markdown": "# Agent 配置证据卡\n\n范围说明：本卡片只检查配置结构，不验证任何客户端版本、连接或运行行为；结果不含任何原始配置值。\n\n共分析 1 个服务；警告 2 项，错误 0 项。\n\n## server-1 (http)\n\n- command: string\n- url: string\n- args: list\n- env_vars: list\n\n- [警告] AMBIGUOUS_TRANSPORT: 同一服务同时声明command与url，传输方式不明确，请核对客户端实际读取的字段。\n- [提示] NOT_VALIDATED: 本工具只做结构检查，不验证客户端版本或运行兼容性；未知字段与未知枚举不回显。\n- [警告] POSSIBLE_TRANSPORT_RESIDUE: 服务带url且同时存在command/args/env/env_vars字段，可能是从其他传输方式迁移后的残留。本工具无法确认，请自行核对，不会自动删除任何字段。\n\n本工具只做结构检查，不验证客户端版本或运行兼容性；未知字段与未知枚举不回显。\n\n即使没有发现问题，也不代表配置可以正常运行或完全安全。\n"
+        },
+        "en": {
+          "card": {
+            "schema_version": 1,
+            "scope": "structure_only",
+            "language": "en",
+            "outcome": "needs_review",
+            "summary": {
+              "service_count": 1,
+              "warning_count": 2,
+              "error_count": 0
+            },
+            "services": [
+              {
+                "id": "server-1",
+                "transport": "http",
+                "fields": {
+                  "command": {
+                    "present": true,
+                    "type": "string"
+                  },
+                  "url": {
+                    "present": true,
+                    "type": "string"
+                  },
+                  "type": {
+                    "present": false,
+                    "type": null
+                  },
+                  "transport": {
+                    "present": false,
+                    "type": null
+                  },
+                  "args": {
+                    "present": true,
+                    "type": "list"
+                  },
+                  "env_vars": {
+                    "present": true,
+                    "type": "list"
+                  },
+                  "env": {
+                    "present": false,
+                    "type": null
+                  },
+                  "headers": {
+                    "present": false,
+                    "type": null
+                  }
+                },
+                "findings": [
+                  {
+                    "code": "AMBIGUOUS_TRANSPORT",
+                    "severity": "warning",
+                    "explanation": "This service declares both command and url, so the transport is ambiguous; check which field your client actually reads."
+                  },
+                  {
+                    "code": "NOT_VALIDATED",
+                    "severity": "info",
+                    "explanation": "This tool performs structure checks only and does not validate client versions or runtime compatibility; unknown fields and enums are not echoed."
+                  },
+                  {
+                    "code": "POSSIBLE_TRANSPORT_RESIDUE",
+                    "severity": "warning",
+                    "explanation": "This service has a url together with command/args/env/env_vars fields, which may be residue from another transport. This tool cannot confirm that; review manually. No fields are removed automatically."
+                  }
+                ]
+              }
+            ]
+          },
+          "markdown": "# Agent Configuration Evidence Card\n\nScope: this card checks configuration structure only; it does not validate client versions, connectivity, or runtime behavior, and it never contains raw configuration values.\n\nAnalyzed 1 service(s); 2 warning(s), 0 error(s).\n\n## server-1 (http)\n\n- command: string\n- url: string\n- args: list\n- env_vars: list\n\n- [warning] AMBIGUOUS_TRANSPORT: This service declares both command and url, so the transport is ambiguous; check which field your client actually reads.\n- [info] NOT_VALIDATED: This tool performs structure checks only and does not validate client versions or runtime compatibility; unknown fields and enums are not echoed.\n- [warning] POSSIBLE_TRANSPORT_RESIDUE: This service has a url together with command/args/env/env_vars fields, which may be residue from another transport. This tool cannot confirm that; review manually. No fields are removed automatically.\n\nThis tool performs structure checks only and does not validate client versions or runtime compatibility; unknown fields and enums are not echoed.\n\nEven with no findings, this does not mean the configuration runs correctly or is fully safe.\n"
+        }
+      }
+    },
+    {
+      "case_id": "transport-conflict",
+      "module": "config",
+      "input_format": "toml",
+      "description": {
+        "zh-CN": "command与url同时存在的传输冲突",
+        "en": "transport conflict between command and url"
+      },
+      "results": {
+        "zh-CN": {
+          "card": {
+            "schema_version": 1,
+            "scope": "structure_only",
+            "language": "zh-CN",
+            "outcome": "needs_review",
+            "summary": {
+              "service_count": 1,
+              "warning_count": 2,
+              "error_count": 1
+            },
+            "services": [
+              {
+                "id": "server-1",
+                "transport": "http",
+                "fields": {
+                  "command": {
+                    "present": true,
+                    "type": "string"
+                  },
+                  "url": {
+                    "present": true,
+                    "type": "string"
+                  },
+                  "type": {
+                    "present": true,
+                    "type": "string"
+                  },
+                  "transport": {
+                    "present": true,
+                    "type": "string"
+                  },
+                  "args": {
+                    "present": false,
+                    "type": null
+                  },
+                  "env_vars": {
+                    "present": false,
+                    "type": null
+                  },
+                  "env": {
+                    "present": false,
+                    "type": null
+                  },
+                  "headers": {
+                    "present": false,
+                    "type": null
+                  }
+                },
+                "findings": [
+                  {
+                    "code": "AMBIGUOUS_TRANSPORT",
+                    "severity": "warning",
+                    "explanation": "同一服务同时声明command与url，传输方式不明确，请核对客户端实际读取的字段。"
+                  },
+                  {
+                    "code": "NOT_VALIDATED",
+                    "severity": "info",
+                    "explanation": "本工具只做结构检查，不验证客户端版本或运行兼容性；未知字段与未知枚举不回显。"
+                  },
+                  {
+                    "code": "POSSIBLE_TRANSPORT_RESIDUE",
+                    "severity": "warning",
+                    "explanation": "服务带url且同时存在command/args/env/env_vars字段，可能是从其他传输方式迁移后的残留。本工具无法确认，请自行核对，不会自动删除任何字段。"
+                  },
+                  {
+                    "code": "TRANSPORT_CONFLICT",
+                    "severity": "error",
+                    "explanation": "显式type与transport字段指向不同的传输方式。"
+                  }
+                ]
+              }
+            ]
+          },
+          "markdown": "# Agent 配置证据卡\n\n范围说明：本卡片只检查配置结构，不验证任何客户端版本、连接或运行行为；结果不含任何原始配置值。\n\n共分析 1 个服务；警告 2 项，错误 1 项。\n\n## server-1 (http)\n\n- command: string\n- url: string\n- type: string\n- transport: string\n\n- [警告] AMBIGUOUS_TRANSPORT: 同一服务同时声明command与url，传输方式不明确，请核对客户端实际读取的字段。\n- [提示] NOT_VALIDATED: 本工具只做结构检查，不验证客户端版本或运行兼容性；未知字段与未知枚举不回显。\n- [警告] POSSIBLE_TRANSPORT_RESIDUE: 服务带url且同时存在command/args/env/env_vars字段，可能是从其他传输方式迁移后的残留。本工具无法确认，请自行核对，不会自动删除任何字段。\n- [错误] TRANSPORT_CONFLICT: 显式type与transport字段指向不同的传输方式。\n\n本工具只做结构检查，不验证客户端版本或运行兼容性；未知字段与未知枚举不回显。\n\n即使没有发现问题，也不代表配置可以正常运行或完全安全。\n"
+        },
+        "en": {
+          "card": {
+            "schema_version": 1,
+            "scope": "structure_only",
+            "language": "en",
+            "outcome": "needs_review",
+            "summary": {
+              "service_count": 1,
+              "warning_count": 2,
+              "error_count": 1
+            },
+            "services": [
+              {
+                "id": "server-1",
+                "transport": "http",
+                "fields": {
+                  "command": {
+                    "present": true,
+                    "type": "string"
+                  },
+                  "url": {
+                    "present": true,
+                    "type": "string"
+                  },
+                  "type": {
+                    "present": true,
+                    "type": "string"
+                  },
+                  "transport": {
+                    "present": true,
+                    "type": "string"
+                  },
+                  "args": {
+                    "present": false,
+                    "type": null
+                  },
+                  "env_vars": {
+                    "present": false,
+                    "type": null
+                  },
+                  "env": {
+                    "present": false,
+                    "type": null
+                  },
+                  "headers": {
+                    "present": false,
+                    "type": null
+                  }
+                },
+                "findings": [
+                  {
+                    "code": "AMBIGUOUS_TRANSPORT",
+                    "severity": "warning",
+                    "explanation": "This service declares both command and url, so the transport is ambiguous; check which field your client actually reads."
+                  },
+                  {
+                    "code": "NOT_VALIDATED",
+                    "severity": "info",
+                    "explanation": "This tool performs structure checks only and does not validate client versions or runtime compatibility; unknown fields and enums are not echoed."
+                  },
+                  {
+                    "code": "POSSIBLE_TRANSPORT_RESIDUE",
+                    "severity": "warning",
+                    "explanation": "This service has a url together with command/args/env/env_vars fields, which may be residue from another transport. This tool cannot confirm that; review manually. No fields are removed automatically."
+                  },
+                  {
+                    "code": "TRANSPORT_CONFLICT",
+                    "severity": "error",
+                    "explanation": "The explicit type and transport fields point to different transports."
+                  }
+                ]
+              }
+            ]
+          },
+          "markdown": "# Agent Configuration Evidence Card\n\nScope: this card checks configuration structure only; it does not validate client versions, connectivity, or runtime behavior, and it never contains raw configuration values.\n\nAnalyzed 1 service(s); 2 warning(s), 1 error(s).\n\n## server-1 (http)\n\n- command: string\n- url: string\n- type: string\n- transport: string\n\n- [warning] AMBIGUOUS_TRANSPORT: This service declares both command and url, so the transport is ambiguous; check which field your client actually reads.\n- [info] NOT_VALIDATED: This tool performs structure checks only and does not validate client versions or runtime compatibility; unknown fields and enums are not echoed.\n- [warning] POSSIBLE_TRANSPORT_RESIDUE: This service has a url together with command/args/env/env_vars fields, which may be residue from another transport. This tool cannot confirm that; review manually. No fields are removed automatically.\n- [error] TRANSPORT_CONFLICT: The explicit type and transport fields point to different transports.\n\nThis tool performs structure checks only and does not validate client versions or runtime compatibility; unknown fields and enums are not echoed.\n\nEven with no findings, this does not mean the configuration runs correctly or is fully safe.\n"
+        }
+      }
+    },
+    {
+      "case_id": "plain-stdio",
+      "module": "config",
+      "input_format": "json",
+      "description": {
+        "zh-CN": "普通stdio服务，仅投影结构",
+        "en": "plain stdio service, structure projection only"
+      },
+      "results": {
+        "zh-CN": {
+          "card": {
+            "schema_version": 1,
+            "scope": "structure_only",
+            "language": "zh-CN",
+            "outcome": "not_validated",
+            "summary": {
+              "service_count": 1,
+              "warning_count": 0,
+              "error_count": 0
+            },
+            "services": [
+              {
+                "id": "server-1",
+                "transport": "stdio",
+                "fields": {
+                  "command": {
+                    "present": true,
+                    "type": "string"
+                  },
+                  "url": {
+                    "present": false,
+                    "type": null
+                  },
+                  "type": {
+                    "present": false,
+                    "type": null
+                  },
+                  "transport": {
+                    "present": false,
+                    "type": null
+                  },
+                  "args": {
+                    "present": true,
+                    "type": "list"
+                  },
+                  "env_vars": {
+                    "present": false,
+                    "type": null
+                  },
+                  "env": {
+                    "present": true,
+                    "type": "object"
+                  },
+                  "headers": {
+                    "present": false,
+                    "type": null
+                  }
+                },
+                "findings": [
+                  {
+                    "code": "NOT_VALIDATED",
+                    "severity": "info",
+                    "explanation": "本工具只做结构检查，不验证客户端版本或运行兼容性；未知字段与未知枚举不回显。"
+                  }
+                ]
+              }
+            ]
+          },
+          "markdown": "# Agent 配置证据卡\n\n范围说明：本卡片只检查配置结构，不验证任何客户端版本、连接或运行行为；结果不含任何原始配置值。\n\n共分析 1 个服务；警告 0 项，错误 0 项。\n\n## server-1 (stdio)\n\n- command: string\n- args: list\n- env: object\n\n- [提示] NOT_VALIDATED: 本工具只做结构检查，不验证客户端版本或运行兼容性；未知字段与未知枚举不回显。\n\n本工具只做结构检查，不验证客户端版本或运行兼容性；未知字段与未知枚举不回显。\n\n即使没有发现问题，也不代表配置可以正常运行或完全安全。\n"
+        },
+        "en": {
+          "card": {
+            "schema_version": 1,
+            "scope": "structure_only",
+            "language": "en",
+            "outcome": "not_validated",
+            "summary": {
+              "service_count": 1,
+              "warning_count": 0,
+              "error_count": 0
+            },
+            "services": [
+              {
+                "id": "server-1",
+                "transport": "stdio",
+                "fields": {
+                  "command": {
+                    "present": true,
+                    "type": "string"
+                  },
+                  "url": {
+                    "present": false,
+                    "type": null
+                  },
+                  "type": {
+                    "present": false,
+                    "type": null
+                  },
+                  "transport": {
+                    "present": false,
+                    "type": null
+                  },
+                  "args": {
+                    "present": true,
+                    "type": "list"
+                  },
+                  "env_vars": {
+                    "present": false,
+                    "type": null
+                  },
+                  "env": {
+                    "present": true,
+                    "type": "object"
+                  },
+                  "headers": {
+                    "present": false,
+                    "type": null
+                  }
+                },
+                "findings": [
+                  {
+                    "code": "NOT_VALIDATED",
+                    "severity": "info",
+                    "explanation": "This tool performs structure checks only and does not validate client versions or runtime compatibility; unknown fields and enums are not echoed."
+                  }
+                ]
+              }
+            ]
+          },
+          "markdown": "# Agent Configuration Evidence Card\n\nScope: this card checks configuration structure only; it does not validate client versions, connectivity, or runtime behavior, and it never contains raw configuration values.\n\nAnalyzed 1 service(s); 0 warning(s), 0 error(s).\n\n## server-1 (stdio)\n\n- command: string\n- args: list\n- env: object\n\n- [info] NOT_VALIDATED: This tool performs structure checks only and does not validate client versions or runtime compatibility; unknown fields and enums are not echoed.\n\nThis tool performs structure checks only and does not validate client versions or runtime compatibility; unknown fields and enums are not echoed.\n\nEven with no findings, this does not mean the configuration runs correctly or is fully safe.\n"
+        }
+      }
+    },
+    {
+      "case_id": "normal",
+      "module": "stream",
+      "description": {
+        "zh-CN": "正常结束：finish stop + [DONE]",
+        "en": "Normal: finish stop + [DONE]"
+      },
+      "results": {
+        "zh-CN": {
+          "card": {
+            "schema_version": 2,
+            "profile": "chat-completions-v1",
+            "language": "zh-CN",
+            "verdict": "NORMAL_TERMINATION",
+            "summary": {
+              "event_count": 5,
+              "saw_finish": true,
+              "saw_done": true,
+              "usage_seen": true
+            },
+            "findings": [
+              {
+                "code": "NORMAL_TERMINATION",
+                "severity": "info",
+                "event_index": null,
+                "explanation": "观察到正常finish且收到[DONE]：本profile下结束证据完整。这不代表答案正确或完整。"
+              }
+            ],
+            "timeline": [
+              {
+                "index": 0,
+                "kind": "chunk",
+                "finish_kind": null,
+                "has_content": true,
+                "has_tool_calls": false,
+                "diagnostic_codes": []
+              },
+              {
+                "index": 1,
+                "kind": "chunk",
+                "finish_kind": null,
+                "has_content": true,
+                "has_tool_calls": false,
+                "diagnostic_codes": []
+              },
+              {
+                "index": 2,
+                "kind": "usage",
+                "finish_kind": null,
+                "has_content": false,
+                "has_tool_calls": false,
+                "diagnostic_codes": []
+              },
+              {
+                "index": 3,
+                "kind": "finish",
+                "finish_kind": "normal",
+                "has_content": false,
+                "has_tool_calls": false,
+                "diagnostic_codes": []
+              },
+              {
+                "index": 4,
+                "kind": "done",
+                "finish_kind": null,
+                "has_content": false,
+                "has_tool_calls": false,
+                "diagnostic_codes": []
+              }
+            ]
+          },
+          "markdown": "# 流结束证据卡\n\n固定局限：本工具只观察结束证据，不推断真实时间/吞吐量，不验证供应商兼容性或认证，无法判断答案正确性。\n\n**正常结束**\n\n- finish证据: 有（正常/limit/filter见findings）\n- DONE证据: 有\n- 事件数: 5\n- usage出现: 是\n\n- [提示] NORMAL_TERMINATION: 观察到正常finish且收到[DONE]：本profile下结束证据完整。这不代表答案正确或完整。\n\n## 事件序列（顺序索引，非真实时间）\n\n- #0 chunk (content)\n- #1 chunk (content)\n- #2 usage\n- #3 finish (finish=normal)\n- #4 done\n"
+        },
+        "en": {
+          "card": {
+            "schema_version": 2,
+            "profile": "chat-completions-v1",
+            "language": "en",
+            "verdict": "NORMAL_TERMINATION",
+            "summary": {
+              "event_count": 5,
+              "saw_finish": true,
+              "saw_done": true,
+              "usage_seen": true
+            },
+            "findings": [
+              {
+                "code": "NORMAL_TERMINATION",
+                "severity": "info",
+                "event_index": null,
+                "explanation": "A normal finish was observed and [DONE] was received: terminal evidence is complete for this profile. This does not prove the answer is correct or complete."
+              }
+            ],
+            "timeline": [
+              {
+                "index": 0,
+                "kind": "chunk",
+                "finish_kind": null,
+                "has_content": true,
+                "has_tool_calls": false,
+                "diagnostic_codes": []
+              },
+              {
+                "index": 1,
+                "kind": "chunk",
+                "finish_kind": null,
+                "has_content": true,
+                "has_tool_calls": false,
+                "diagnostic_codes": []
+              },
+              {
+                "index": 2,
+                "kind": "usage",
+                "finish_kind": null,
+                "has_content": false,
+                "has_tool_calls": false,
+                "diagnostic_codes": []
+              },
+              {
+                "index": 3,
+                "kind": "finish",
+                "finish_kind": "normal",
+                "has_content": false,
+                "has_tool_calls": false,
+                "diagnostic_codes": []
+              },
+              {
+                "index": 4,
+                "kind": "done",
+                "finish_kind": null,
+                "has_content": false,
+                "has_tool_calls": false,
+                "diagnostic_codes": []
+              }
+            ]
+          },
+          "markdown": "# Stream End Evidence Card\n\nFixed limits: this tool observes terminal evidence only; it does not infer real timing/throughput, provider compatibility, or authentication, and cannot judge answer correctness.\n\n**Normal termination**\n\n- finish evidence: yes\n- [DONE] evidence: yes\n- events: 5\n- usage seen: yes\n\n- [info] NORMAL_TERMINATION: A normal finish was observed and [DONE] was received: terminal evidence is complete for this profile. This does not prove the answer is correct or complete.\n\n## Event sequence (order index, not real time)\n\n- #0 chunk (content)\n- #1 chunk (content)\n- #2 usage\n- #3 finish (finish=normal)\n- #4 done\n"
+        }
+      }
+    },
+    {
+      "case_id": "finish-only",
+      "module": "stream",
+      "description": {
+        "zh-CN": "只有finish，缺[DONE]",
+        "en": "finish without [DONE]"
+      },
+      "results": {
+        "zh-CN": {
+          "card": {
+            "schema_version": 2,
+            "profile": "chat-completions-v1",
+            "language": "zh-CN",
+            "verdict": "NEEDS_REVIEW",
+            "summary": {
+              "event_count": 2,
+              "saw_finish": true,
+              "saw_done": false,
+              "usage_seen": false
+            },
+            "findings": [
+              {
+                "code": "FINISH_WITHOUT_DONE",
+                "severity": "warning",
+                "event_index": null,
+                "explanation": "观察到finish但没有[DONE]：应用层结束标记缺失。请核对网关/SDK是否吞掉终止帧，不要直接断言数据丢失。"
+              }
+            ],
+            "timeline": [
+              {
+                "index": 0,
+                "kind": "chunk",
+                "finish_kind": null,
+                "has_content": true,
+                "has_tool_calls": false,
+                "diagnostic_codes": []
+              },
+              {
+                "index": 1,
+                "kind": "finish",
+                "finish_kind": "normal",
+                "has_content": false,
+                "has_tool_calls": false,
+                "diagnostic_codes": []
+              }
+            ]
+          },
+          "markdown": "# 流结束证据卡\n\n固定局限：本工具只观察结束证据，不推断真实时间/吞吐量，不验证供应商兼容性或认证，无法判断答案正确性。\n\n**需要复核**\n\n- finish证据: 有（正常/limit/filter见findings）\n- DONE证据: 无\n- 事件数: 2\n- usage出现: 否\n\n- [警告] FINISH_WITHOUT_DONE: 观察到finish但没有[DONE]：应用层结束标记缺失。请核对网关/SDK是否吞掉终止帧，不要直接断言数据丢失。\n\n## 事件序列（顺序索引，非真实时间）\n\n- #0 chunk (content)\n- #1 finish (finish=normal)\n"
+        },
+        "en": {
+          "card": {
+            "schema_version": 2,
+            "profile": "chat-completions-v1",
+            "language": "en",
+            "verdict": "NEEDS_REVIEW",
+            "summary": {
+              "event_count": 2,
+              "saw_finish": true,
+              "saw_done": false,
+              "usage_seen": false
+            },
+            "findings": [
+              {
+                "code": "FINISH_WITHOUT_DONE",
+                "severity": "warning",
+                "event_index": null,
+                "explanation": "A finish was observed but no [DONE]: the application-level termination marker is missing. Check whether your gateway/SDK dropped the terminal frame; do not assume data loss."
+              }
+            ],
+            "timeline": [
+              {
+                "index": 0,
+                "kind": "chunk",
+                "finish_kind": null,
+                "has_content": true,
+                "has_tool_calls": false,
+                "diagnostic_codes": []
+              },
+              {
+                "index": 1,
+                "kind": "finish",
+                "finish_kind": "normal",
+                "has_content": false,
+                "has_tool_calls": false,
+                "diagnostic_codes": []
+              }
+            ]
+          },
+          "markdown": "# Stream End Evidence Card\n\nFixed limits: this tool observes terminal evidence only; it does not infer real timing/throughput, provider compatibility, or authentication, and cannot judge answer correctness.\n\n**Needs review**\n\n- finish evidence: yes\n- [DONE] evidence: none\n- events: 2\n- usage seen: no\n\n- [warning] FINISH_WITHOUT_DONE: A finish was observed but no [DONE]: the application-level termination marker is missing. Check whether your gateway/SDK dropped the terminal frame; do not assume data loss.\n\n## Event sequence (order index, not real time)\n\n- #0 chunk (content)\n- #1 finish (finish=normal)\n"
+        }
+      }
+    },
+    {
+      "case_id": "done-only",
+      "module": "stream",
+      "description": {
+        "zh-CN": "只有[DONE]，缺finish",
+        "en": "[DONE] without finish"
+      },
+      "results": {
+        "zh-CN": {
+          "card": {
+            "schema_version": 2,
+            "profile": "chat-completions-v1",
+            "language": "zh-CN",
+            "verdict": "NEEDS_REVIEW",
+            "summary": {
+              "event_count": 2,
+              "saw_finish": false,
+              "saw_done": true,
+              "usage_seen": false
+            },
+            "findings": [
+              {
+                "code": "DONE_WITHOUT_FINISH",
+                "severity": "warning",
+                "event_index": null,
+                "explanation": "收到[DONE]但没有finish_reason：连接收尾正常，但供应商未给出结束原因。"
+              }
+            ],
+            "timeline": [
+              {
+                "index": 0,
+                "kind": "chunk",
+                "finish_kind": null,
+                "has_content": true,
+                "has_tool_calls": false,
+                "diagnostic_codes": []
+              },
+              {
+                "index": 1,
+                "kind": "done",
+                "finish_kind": null,
+                "has_content": false,
+                "has_tool_calls": false,
+                "diagnostic_codes": []
+              }
+            ]
+          },
+          "markdown": "# 流结束证据卡\n\n固定局限：本工具只观察结束证据，不推断真实时间/吞吐量，不验证供应商兼容性或认证，无法判断答案正确性。\n\n**需要复核**\n\n- finish证据: 无（正常/limit/filter见findings）\n- DONE证据: 有\n- 事件数: 2\n- usage出现: 否\n\n- [警告] DONE_WITHOUT_FINISH: 收到[DONE]但没有finish_reason：连接收尾正常，但供应商未给出结束原因。\n\n## 事件序列（顺序索引，非真实时间）\n\n- #0 chunk (content)\n- #1 done\n"
+        },
+        "en": {
+          "card": {
+            "schema_version": 2,
+            "profile": "chat-completions-v1",
+            "language": "en",
+            "verdict": "NEEDS_REVIEW",
+            "summary": {
+              "event_count": 2,
+              "saw_finish": false,
+              "saw_done": true,
+              "usage_seen": false
+            },
+            "findings": [
+              {
+                "code": "DONE_WITHOUT_FINISH",
+                "severity": "warning",
+                "event_index": null,
+                "explanation": "[DONE] was received but no finish_reason: the stream closed normally, yet the provider never reported why it stopped."
+              }
+            ],
+            "timeline": [
+              {
+                "index": 0,
+                "kind": "chunk",
+                "finish_kind": null,
+                "has_content": true,
+                "has_tool_calls": false,
+                "diagnostic_codes": []
+              },
+              {
+                "index": 1,
+                "kind": "done",
+                "finish_kind": null,
+                "has_content": false,
+                "has_tool_calls": false,
+                "diagnostic_codes": []
+              }
+            ]
+          },
+          "markdown": "# Stream End Evidence Card\n\nFixed limits: this tool observes terminal evidence only; it does not infer real timing/throughput, provider compatibility, or authentication, and cannot judge answer correctness.\n\n**Needs review**\n\n- finish evidence: none\n- [DONE] evidence: yes\n- events: 2\n- usage seen: no\n\n- [warning] DONE_WITHOUT_FINISH: [DONE] was received but no finish_reason: the stream closed normally, yet the provider never reported why it stopped.\n\n## Event sequence (order index, not real time)\n\n- #0 chunk (content)\n- #1 done\n"
+        }
+      }
+    },
+    {
+      "case_id": "truncated",
+      "module": "stream",
+      "description": {
+        "zh-CN": "内容流被截断：两种结束证据都没有",
+        "en": "Truncated content stream: no terminal evidence"
+      },
+      "results": {
+        "zh-CN": {
+          "card": {
+            "schema_version": 2,
+            "profile": "chat-completions-v1",
+            "language": "zh-CN",
+            "verdict": "NEEDS_REVIEW",
+            "summary": {
+              "event_count": 2,
+              "saw_finish": false,
+              "saw_done": false,
+              "usage_seen": false
+            },
+            "findings": [
+              {
+                "code": "NO_TERMINAL_EVIDENCE",
+                "severity": "warning",
+                "event_index": null,
+                "explanation": "有数据事件但既无finish也无[DONE]：缺少结束证据。EOF本身不能证明供应商中断的原因。"
+              }
+            ],
+            "timeline": [
+              {
+                "index": 0,
+                "kind": "chunk",
+                "finish_kind": null,
+                "has_content": true,
+                "has_tool_calls": false,
+                "diagnostic_codes": []
+              },
+              {
+                "index": 1,
+                "kind": "chunk",
+                "finish_kind": null,
+                "has_content": true,
+                "has_tool_calls": false,
+                "diagnostic_codes": []
+              }
+            ]
+          },
+          "markdown": "# 流结束证据卡\n\n固定局限：本工具只观察结束证据，不推断真实时间/吞吐量，不验证供应商兼容性或认证，无法判断答案正确性。\n\n**需要复核**\n\n- finish证据: 无（正常/limit/filter见findings）\n- DONE证据: 无\n- 事件数: 2\n- usage出现: 否\n\n- [警告] NO_TERMINAL_EVIDENCE: 有数据事件但既无finish也无[DONE]：缺少结束证据。EOF本身不能证明供应商中断的原因。\n\n## 事件序列（顺序索引，非真实时间）\n\n- #0 chunk (content)\n- #1 chunk (content)\n"
+        },
+        "en": {
+          "card": {
+            "schema_version": 2,
+            "profile": "chat-completions-v1",
+            "language": "en",
+            "verdict": "NEEDS_REVIEW",
+            "summary": {
+              "event_count": 2,
+              "saw_finish": false,
+              "saw_done": false,
+              "usage_seen": false
+            },
+            "findings": [
+              {
+                "code": "NO_TERMINAL_EVIDENCE",
+                "severity": "warning",
+                "event_index": null,
+                "explanation": "Data events exist but neither a finish nor [DONE]: terminal evidence is missing. EOF alone cannot tell you why the provider stopped."
+              }
+            ],
+            "timeline": [
+              {
+                "index": 0,
+                "kind": "chunk",
+                "finish_kind": null,
+                "has_content": true,
+                "has_tool_calls": false,
+                "diagnostic_codes": []
+              },
+              {
+                "index": 1,
+                "kind": "chunk",
+                "finish_kind": null,
+                "has_content": true,
+                "has_tool_calls": false,
+                "diagnostic_codes": []
+              }
+            ]
+          },
+          "markdown": "# Stream End Evidence Card\n\nFixed limits: this tool observes terminal evidence only; it does not infer real timing/throughput, provider compatibility, or authentication, and cannot judge answer correctness.\n\n**Needs review**\n\n- finish evidence: none\n- [DONE] evidence: none\n- events: 2\n- usage seen: no\n\n- [warning] NO_TERMINAL_EVIDENCE: Data events exist but neither a finish nor [DONE]: terminal evidence is missing. EOF alone cannot tell you why the provider stopped.\n\n## Event sequence (order index, not real time)\n\n- #0 chunk (content)\n- #1 chunk (content)\n"
+        }
+      }
+    },
+    {
+      "case_id": "limit-stop",
+      "module": "stream",
+      "description": {
+        "zh-CN": "finish_reason=length：长度上限停止",
+        "en": "finish_reason=length"
+      },
+      "results": {
+        "zh-CN": {
+          "card": {
+            "schema_version": 2,
+            "profile": "chat-completions-v1",
+            "language": "zh-CN",
+            "verdict": "NEEDS_REVIEW",
+            "summary": {
+              "event_count": 2,
+              "saw_finish": true,
+              "saw_done": false,
+              "usage_seen": false
+            },
+            "findings": [
+              {
+                "code": "LIMIT_STOP",
+                "severity": "warning",
+                "event_index": 1,
+                "explanation": "finish_reason=length：生成因长度上限停止，属于非正常结束证据。"
+              }
+            ],
+            "timeline": [
+              {
+                "index": 0,
+                "kind": "chunk",
+                "finish_kind": null,
+                "has_content": true,
+                "has_tool_calls": false,
+                "diagnostic_codes": []
+              },
+              {
+                "index": 1,
+                "kind": "finish",
+                "finish_kind": "limit",
+                "has_content": false,
+                "has_tool_calls": false,
+                "diagnostic_codes": [
+                  "LIMIT_STOP"
+                ]
+              }
+            ]
+          },
+          "markdown": "# 流结束证据卡\n\n固定局限：本工具只观察结束证据，不推断真实时间/吞吐量，不验证供应商兼容性或认证，无法判断答案正确性。\n\n**需要复核**\n\n- finish证据: 有（正常/limit/filter见findings）\n- DONE证据: 无\n- 事件数: 2\n- usage出现: 否\n\n- [警告] LIMIT_STOP @event1: finish_reason=length：生成因长度上限停止，属于非正常结束证据。\n\n## 事件序列（顺序索引，非真实时间）\n\n- #0 chunk (content)\n- #1 finish (finish=limit, LIMIT_STOP)\n"
+        },
+        "en": {
+          "card": {
+            "schema_version": 2,
+            "profile": "chat-completions-v1",
+            "language": "en",
+            "verdict": "NEEDS_REVIEW",
+            "summary": {
+              "event_count": 2,
+              "saw_finish": true,
+              "saw_done": false,
+              "usage_seen": false
+            },
+            "findings": [
+              {
+                "code": "LIMIT_STOP",
+                "severity": "warning",
+                "event_index": 1,
+                "explanation": "finish_reason=length: generation stopped at a length limit; this is non-normal terminal evidence."
+              }
+            ],
+            "timeline": [
+              {
+                "index": 0,
+                "kind": "chunk",
+                "finish_kind": null,
+                "has_content": true,
+                "has_tool_calls": false,
+                "diagnostic_codes": []
+              },
+              {
+                "index": 1,
+                "kind": "finish",
+                "finish_kind": "limit",
+                "has_content": false,
+                "has_tool_calls": false,
+                "diagnostic_codes": [
+                  "LIMIT_STOP"
+                ]
+              }
+            ]
+          },
+          "markdown": "# Stream End Evidence Card\n\nFixed limits: this tool observes terminal evidence only; it does not infer real timing/throughput, provider compatibility, or authentication, and cannot judge answer correctness.\n\n**Needs review**\n\n- finish evidence: yes\n- [DONE] evidence: none\n- events: 2\n- usage seen: no\n\n- [warning] LIMIT_STOP @event1: finish_reason=length: generation stopped at a length limit; this is non-normal terminal evidence.\n\n## Event sequence (order index, not real time)\n\n- #0 chunk (content)\n- #1 finish (finish=limit, LIMIT_STOP)\n"
+        }
+      }
+    },
+    {
+      "case_id": "after-done",
+      "module": "stream",
+      "description": {
+        "zh-CN": "[DONE]之后仍收到数据",
+        "en": "Data after [DONE]"
+      },
+      "results": {
+        "zh-CN": {
+          "card": {
+            "schema_version": 2,
+            "profile": "chat-completions-v1",
+            "language": "zh-CN",
+            "verdict": "NEEDS_REVIEW",
+            "summary": {
+              "event_count": 4,
+              "saw_finish": true,
+              "saw_done": true,
+              "usage_seen": false
+            },
+            "findings": [
+              {
+                "code": "DATA_AFTER_DONE",
+                "severity": "warning",
+                "event_index": 3,
+                "explanation": "[DONE]之后仍收到已分派的数据事件：终止帧之后出现残留数据。"
+              }
+            ],
+            "timeline": [
+              {
+                "index": 0,
+                "kind": "chunk",
+                "finish_kind": null,
+                "has_content": true,
+                "has_tool_calls": false,
+                "diagnostic_codes": []
+              },
+              {
+                "index": 1,
+                "kind": "finish",
+                "finish_kind": "normal",
+                "has_content": false,
+                "has_tool_calls": false,
+                "diagnostic_codes": []
+              },
+              {
+                "index": 2,
+                "kind": "done",
+                "finish_kind": null,
+                "has_content": false,
+                "has_tool_calls": false,
+                "diagnostic_codes": []
+              },
+              {
+                "index": 3,
+                "kind": "chunk",
+                "finish_kind": null,
+                "has_content": true,
+                "has_tool_calls": false,
+                "diagnostic_codes": [
+                  "DATA_AFTER_DONE"
+                ]
+              }
+            ]
+          },
+          "markdown": "# 流结束证据卡\n\n固定局限：本工具只观察结束证据，不推断真实时间/吞吐量，不验证供应商兼容性或认证，无法判断答案正确性。\n\n**需要复核**\n\n- finish证据: 有（正常/limit/filter见findings）\n- DONE证据: 有\n- 事件数: 4\n- usage出现: 否\n\n- [警告] DATA_AFTER_DONE @event3: [DONE]之后仍收到已分派的数据事件：终止帧之后出现残留数据。\n\n## 事件序列（顺序索引，非真实时间）\n\n- #0 chunk (content)\n- #1 finish (finish=normal)\n- #2 done\n- #3 chunk (content, DATA_AFTER_DONE)\n"
+        },
+        "en": {
+          "card": {
+            "schema_version": 2,
+            "profile": "chat-completions-v1",
+            "language": "en",
+            "verdict": "NEEDS_REVIEW",
+            "summary": {
+              "event_count": 4,
+              "saw_finish": true,
+              "saw_done": true,
+              "usage_seen": false
+            },
+            "findings": [
+              {
+                "code": "DATA_AFTER_DONE",
+                "severity": "warning",
+                "event_index": 3,
+                "explanation": "Dispatched data arrived after [DONE]: residual data follows the terminal frame."
+              }
+            ],
+            "timeline": [
+              {
+                "index": 0,
+                "kind": "chunk",
+                "finish_kind": null,
+                "has_content": true,
+                "has_tool_calls": false,
+                "diagnostic_codes": []
+              },
+              {
+                "index": 1,
+                "kind": "finish",
+                "finish_kind": "normal",
+                "has_content": false,
+                "has_tool_calls": false,
+                "diagnostic_codes": []
+              },
+              {
+                "index": 2,
+                "kind": "done",
+                "finish_kind": null,
+                "has_content": false,
+                "has_tool_calls": false,
+                "diagnostic_codes": []
+              },
+              {
+                "index": 3,
+                "kind": "chunk",
+                "finish_kind": null,
+                "has_content": true,
+                "has_tool_calls": false,
+                "diagnostic_codes": [
+                  "DATA_AFTER_DONE"
+                ]
+              }
+            ]
+          },
+          "markdown": "# Stream End Evidence Card\n\nFixed limits: this tool observes terminal evidence only; it does not infer real timing/throughput, provider compatibility, or authentication, and cannot judge answer correctness.\n\n**Needs review**\n\n- finish evidence: yes\n- [DONE] evidence: yes\n- events: 4\n- usage seen: no\n\n- [warning] DATA_AFTER_DONE @event3: Dispatched data arrived after [DONE]: residual data follows the terminal frame.\n\n## Event sequence (order index, not real time)\n\n- #0 chunk (content)\n- #1 finish (finish=normal)\n- #2 done\n- #3 chunk (content, DATA_AFTER_DONE)\n"
+        }
+      }
+    },
+    {
+      "case_id": "bad-json",
+      "module": "stream",
+      "description": {
+        "zh-CN": "已分派的事件data不是合法JSON",
+        "en": "Dispatched event with invalid JSON"
+      },
+      "results": {
+        "zh-CN": {
+          "card": {
+            "schema_version": 2,
+            "profile": "chat-completions-v1",
+            "language": "zh-CN",
+            "verdict": "INVALID_INPUT",
+            "summary": {
+              "event_count": 2,
+              "saw_finish": false,
+              "saw_done": false,
+              "usage_seen": false
+            },
+            "findings": [
+              {
+                "code": "INVALID_EVENT_JSON",
+                "severity": "error",
+                "event_index": 1,
+                "explanation": "已分派的事件data不是合法JSON。"
+              }
+            ],
+            "timeline": [
+              {
+                "index": 0,
+                "kind": "chunk",
+                "finish_kind": null,
+                "has_content": true,
+                "has_tool_calls": false,
+                "diagnostic_codes": []
+              },
+              {
+                "index": 1,
+                "kind": "unsupported",
+                "finish_kind": null,
+                "has_content": false,
+                "has_tool_calls": false,
+                "diagnostic_codes": [
+                  "INVALID_EVENT_JSON"
+                ]
+              }
+            ]
+          },
+          "markdown": "# 流结束证据卡\n\n固定局限：本工具只观察结束证据，不推断真实时间/吞吐量，不验证供应商兼容性或认证，无法判断答案正确性。\n\n**输入无效**\n\n- finish证据: 无（正常/limit/filter见findings）\n- DONE证据: 无\n- 事件数: 2\n- usage出现: 否\n\n- [错误] INVALID_EVENT_JSON @event1: 已分派的事件data不是合法JSON。\n\n## 事件序列（顺序索引，非真实时间）\n\n- #0 chunk (content)\n- #1 unsupported (INVALID_EVENT_JSON)\n"
+        },
+        "en": {
+          "card": {
+            "schema_version": 2,
+            "profile": "chat-completions-v1",
+            "language": "en",
+            "verdict": "INVALID_INPUT",
+            "summary": {
+              "event_count": 2,
+              "saw_finish": false,
+              "saw_done": false,
+              "usage_seen": false
+            },
+            "findings": [
+              {
+                "code": "INVALID_EVENT_JSON",
+                "severity": "error",
+                "event_index": 1,
+                "explanation": "A dispatched event's data is not valid JSON."
+              }
+            ],
+            "timeline": [
+              {
+                "index": 0,
+                "kind": "chunk",
+                "finish_kind": null,
+                "has_content": true,
+                "has_tool_calls": false,
+                "diagnostic_codes": []
+              },
+              {
+                "index": 1,
+                "kind": "unsupported",
+                "finish_kind": null,
+                "has_content": false,
+                "has_tool_calls": false,
+                "diagnostic_codes": [
+                  "INVALID_EVENT_JSON"
+                ]
+              }
+            ]
+          },
+          "markdown": "# Stream End Evidence Card\n\nFixed limits: this tool observes terminal evidence only; it does not infer real timing/throughput, provider compatibility, or authentication, and cannot judge answer correctness.\n\n**Invalid input**\n\n- finish evidence: none\n- [DONE] evidence: none\n- events: 2\n- usage seen: no\n\n- [error] INVALID_EVENT_JSON @event1: A dispatched event's data is not valid JSON.\n\n## Event sequence (order index, not real time)\n\n- #0 chunk (content)\n- #1 unsupported (INVALID_EVENT_JSON)\n"
+        }
+      }
+    },
+    {
+      "case_id": "unterminated",
+      "module": "stream",
+      "description": {
+        "zh-CN": "最后一个data缺空行，未分派",
+        "en": "Trailing data without a blank line"
+      },
+      "results": {
+        "zh-CN": {
+          "card": {
+            "schema_version": 2,
+            "profile": "chat-completions-v1",
+            "language": "zh-CN",
+            "verdict": "NEEDS_REVIEW",
+            "summary": {
+              "event_count": 1,
+              "saw_finish": false,
+              "saw_done": false,
+              "usage_seen": false
+            },
+            "findings": [
+              {
+                "code": "UNTERMINATED_EVENT",
+                "severity": "warning",
+                "event_index": 0,
+                "explanation": "流在事件中途结束：最后一个data块缺少空行分派，其内容不计为已接收事件。"
+              }
+            ],
+            "timeline": [
+              {
+                "index": 0,
+                "kind": "chunk",
+                "finish_kind": null,
+                "has_content": true,
+                "has_tool_calls": false,
+                "diagnostic_codes": [
+                  "UNTERMINATED_EVENT"
+                ]
+              }
+            ]
+          },
+          "markdown": "# 流结束证据卡\n\n固定局限：本工具只观察结束证据，不推断真实时间/吞吐量，不验证供应商兼容性或认证，无法判断答案正确性。\n\n**需要复核**\n\n- finish证据: 无（正常/limit/filter见findings）\n- DONE证据: 无\n- 事件数: 1\n- usage出现: 否\n\n- [警告] UNTERMINATED_EVENT @event0: 流在事件中途结束：最后一个data块缺少空行分派，其内容不计为已接收事件。\n\n## 事件序列（顺序索引，非真实时间）\n\n- #0 chunk (content, UNTERMINATED_EVENT)\n"
+        },
+        "en": {
+          "card": {
+            "schema_version": 2,
+            "profile": "chat-completions-v1",
+            "language": "en",
+            "verdict": "NEEDS_REVIEW",
+            "summary": {
+              "event_count": 1,
+              "saw_finish": false,
+              "saw_done": false,
+              "usage_seen": false
+            },
+            "findings": [
+              {
+                "code": "UNTERMINATED_EVENT",
+                "severity": "warning",
+                "event_index": 0,
+                "explanation": "The stream ends mid-event: the trailing data block was never dispatched by a blank line, so it does not count as received."
+              }
+            ],
+            "timeline": [
+              {
+                "index": 0,
+                "kind": "chunk",
+                "finish_kind": null,
+                "has_content": true,
+                "has_tool_calls": false,
+                "diagnostic_codes": [
+                  "UNTERMINATED_EVENT"
+                ]
+              }
+            ]
+          },
+          "markdown": "# Stream End Evidence Card\n\nFixed limits: this tool observes terminal evidence only; it does not infer real timing/throughput, provider compatibility, or authentication, and cannot judge answer correctness.\n\n**Needs review**\n\n- finish evidence: none\n- [DONE] evidence: none\n- events: 1\n- usage seen: no\n\n- [warning] UNTERMINATED_EVENT @event0: The stream ends mid-event: the trailing data block was never dispatched by a blank line, so it does not count as received.\n\n## Event sequence (order index, not real time)\n\n- #0 chunk (content, UNTERMINATED_EVENT)\n"
+        }
+      }
+    }
+  ]
+}

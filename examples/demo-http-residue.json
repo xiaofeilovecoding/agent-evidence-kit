@@ -1,0 +1,16 @@
+{
+  "mcp_servers": {
+    "remote-search": {
+      "url": "https://search.example.invalid/v1",
+      "command": "npx",
+      "args": [
+        "-y",
+        "search-server@1.4.0"
+      ],
+      "env_vars": [
+        "SEARCH_TOKEN",
+        "PROXY_URL"
+      ]
+    }
+  }
+}

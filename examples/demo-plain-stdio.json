@@ -1,0 +1,15 @@
+{
+  "mcp_servers": {
+    "local-files": {
+      "command": "python",
+      "args": [
+        "-m",
+        "file_server"
+      ],
+      "env": {
+        "LOCAL_TOKEN": "sk-demo-not-a-real-key-0000",
+        "CACHE_DIR": "/tmp/cache"
+      }
+    }
+  }
+}

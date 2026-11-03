@@ -1,0 +1,5 @@
+[mcp_servers.media-bridge]
+url = "https://media.example.invalid/mcp"
+command = "uvx"
+type = "stdio"
+transport = "sse"

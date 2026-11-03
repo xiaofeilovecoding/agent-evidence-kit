@@ -1,0 +1,226 @@
+"""Renderers: projection core in, localized JSON/Markdown out.
+
+Renderers only accept the projection model; they never receive raw
+stream text. All explanation strings are fixed constants below.
+"""
+from __future__ import annotations
+
+from . import PROFILE
+
+SCHEMA_VERSION = 2
+LANGUAGES = ("zh-CN", "en")
+OUTPUT_FORMATS = ("json", "md")
+
+EXPLANATIONS = {
+    "NORMAL_TERMINATION": {
+        "zh-CN": "观察到正常finish且收到[DONE]：本profile下结束证据完整。这不代表答案正确或完整。",
+        "en": "A normal finish was observed and [DONE] was received: terminal evidence is complete for this profile. This does not prove the answer is correct or complete.",
+    },
+    "FINISH_WITHOUT_DONE": {
+        "zh-CN": "观察到finish但没有[DONE]：应用层结束标记缺失。请核对网关/SDK是否吞掉终止帧，不要直接断言数据丢失。",
+        "en": "A finish was observed but no [DONE]: the application-level termination marker is missing. Check whether your gateway/SDK dropped the terminal frame; do not assume data loss.",
+    },
+    "DONE_WITHOUT_FINISH": {
+        "zh-CN": "收到[DONE]但没有finish_reason：连接收尾正常，但供应商未给出结束原因。",
+        "en": "[DONE] was received but no finish_reason: the stream closed normally, yet the provider never reported why it stopped.",
+    },
+    "NO_TERMINAL_EVIDENCE": {
+        "zh-CN": "有数据事件但既无finish也无[DONE]：缺少结束证据。EOF本身不能证明供应商中断的原因。",
+        "en": "Data events exist but neither a finish nor [DONE]: terminal evidence is missing. EOF alone cannot tell you why the provider stopped.",
+    },
+    "NO_DATA": {
+        "zh-CN": "没有可分派的数据事件（空流或仅有注释/心跳）。",
+        "en": "No dispatchable data events (empty stream or only comments/heartbeats).",
+    },
+    "UNTERMINATED_EVENT": {
+        "zh-CN": "流在事件中途结束：最后一个data块缺少空行分派，其内容不计为已接收事件。",
+        "en": "The stream ends mid-event: the trailing data block was never dispatched by a blank line, so it does not count as received.",
+    },
+    "LIMIT_STOP": {
+        "zh-CN": "finish_reason=length：生成因长度上限停止，属于非正常结束证据。",
+        "en": "finish_reason=length: generation stopped at a length limit; this is non-normal terminal evidence.",
+    },
+    "FILTER_STOP": {
+        "zh-CN": "finish_reason=content_filter：生成被内容过滤停止，属于非正常结束证据。",
+        "en": "finish_reason=content_filter: generation stopped by a content filter; this is non-normal terminal evidence.",
+    },
+    "UPSTREAM_ERROR": {
+        "zh-CN": "流中包含上游错误事件（错误正文不回显）。",
+        "en": "The stream contains an upstream error event (the error body is never echoed).",
+    },
+    "DATA_AFTER_DONE": {
+        "zh-CN": "[DONE]之后仍收到已分派的数据事件：终止帧之后出现残留数据。",
+        "en": "Dispatched data arrived after [DONE]: residual data follows the terminal frame.",
+    },
+    "UNSUPPORTED_PROFILE": {
+        "zh-CN": "事件JSON不符合chat-completions-v1支持的结构（如多choices、非0 index、未知provider字段形态），本工具不猜测兼容。",
+        "en": "The event JSON does not match the supported chat-completions-v1 shape (e.g. multiple choices, non-zero index, unknown provider structure); this tool does not guess compatibility.",
+    },
+    "UNSUPPORTED_EVENT": {
+        "zh-CN": "出现本profile不支持的SSE event类型（其值不回显）。",
+        "en": "An SSE event type unsupported by this profile was seen (its value is not echoed).",
+    },
+    "UNSUPPORTED_FINISH": {
+        "zh-CN": "finish_reason不是受支持的枚举值（不回显原值）。",
+        "en": "finish_reason is not one of the supported values (the raw value is not echoed).",
+    },
+    "INVALID_EVENT_JSON": {
+        "zh-CN": "已分派的事件data不是合法JSON。",
+        "en": "A dispatched event's data is not valid JSON.",
+    },
+    "DUPLICATE_KEY": {
+        "zh-CN": "事件JSON存在重复键，已拒绝解析以避免歧义。",
+        "en": "The event JSON contains duplicate keys; parsing was rejected to avoid ambiguity.",
+    },
+    "LIMIT_EXCEEDED": {
+        "zh-CN": "超出冻结的解析限制（8MiB输入、128KiB行、256KiB事件data、10000事件、JSON深度16）。",
+        "en": "A frozen parse limit was exceeded (8MiB input, 128KiB line, 256KiB event data, 10000 events, JSON depth 16).",
+    },
+    "INVALID_ENCODING": {
+        "zh-CN": "输入不是有效UTF-8（允许一个BOM）。",
+        "en": "The input is not valid UTF-8 (a single leading BOM is allowed).",
+    },
+    "INPUT_UNREADABLE": {
+        "zh-CN": "无法读取输入文件（不存在、无权限或不是普通文件）。",
+        "en": "The input file could not be read (missing, no permission, or not a regular file).",
+    },
+    "INPUT_TOO_LARGE": {
+        "zh-CN": "输入超过8MiB上限。",
+        "en": "The input exceeds the 8MiB limit.",
+    },
+}
+
+LIMITS_NOTE = {
+    "zh-CN": "固定局限：本工具只观察结束证据，不推断真实时间/吞吐量，不验证供应商兼容性或认证，无法判断答案正确性。",
+    "en": "Fixed limits: this tool observes terminal evidence only; it does not infer real timing/throughput, provider compatibility, or authentication, and cannot judge answer correctness.",
+}
+
+_VERDICT_LABELS = {
+    "NORMAL_TERMINATION": {"zh-CN": "正常结束", "en": "Normal termination"},
+    "NEEDS_REVIEW": {"zh-CN": "需要复核", "en": "Needs review"},
+    "INVALID_INPUT": {"zh-CN": "输入无效", "en": "Invalid input"},
+}
+
+_SEVERITY_LABELS = {
+    "warning": {"zh-CN": "警告", "en": "warning"},
+    "error": {"zh-CN": "错误", "en": "error"},
+    "info": {"zh-CN": "提示", "en": "info"},
+}
+
+_KIND_LABELS = {
+    "chunk": {"zh-CN": "chunk", "en": "chunk"},
+    "finish": {"zh-CN": "finish", "en": "finish"},
+    "usage": {"zh-CN": "usage", "en": "usage"},
+    "done": {"zh-CN": "done", "en": "done"},
+    "error": {"zh-CN": "error", "en": "error"},
+    "unsupported": {"zh-CN": "unsupported", "en": "unsupported"},
+}
+
+
+def _explanation(code: str, language: str) -> str:
+    return EXPLANATIONS[code][language]
+
+
+def render_card(core: dict, language: str, output_format: str) -> dict | str:
+    if output_format == "json":
+        return _render_json(core, language)
+    return _render_markdown(core, language)
+
+
+def _render_json(core: dict, language: str) -> dict:
+    card = {
+        "schema_version": SCHEMA_VERSION,
+        "profile": PROFILE,
+        "language": language,
+        "verdict": None,
+        "summary": None,
+        "findings": [],
+        "timeline": [],
+    }
+    if "error" in core:
+        code = core["error"]
+        card["verdict"] = "INVALID_INPUT"
+        card["summary"] = {
+            "event_count": 0,
+            "saw_finish": False,
+            "saw_done": False,
+            "usage_seen": False,
+        }
+        card["findings"] = [
+            {"code": code, "severity": "error", "event_index": None,
+             "explanation": _explanation(code, language)}
+        ]
+        return card
+    card["verdict"] = core["verdict"]
+    card["summary"] = core["summary"]
+    card["findings"] = [
+        {
+            "code": f["code"],
+            "severity": f["severity"],
+            "event_index": f["event_index"],
+            "explanation": _explanation(f["code"], language),
+        }
+        for f in core["findings"]
+    ]
+    card["timeline"] = core["timeline"]
+    return card
+
+
+def _render_markdown(core: dict, language: str) -> str:
+    is_zh = language == "zh-CN"
+    lines = []
+    lines.append("# Stream End Evidence Card" if not is_zh else "# 流结束证据卡")
+    lines.append("")
+    lines.append(LIMITS_NOTE[language])
+    lines.append("")
+    if "error" in core:
+        code = core["error"]
+        lines.append(f"- {code}: {_explanation(code, language)}")
+        lines.append("")
+        return "\n".join(lines)
+    verdict = _VERDICT_LABELS[core["verdict"]][language]
+    summary = core["summary"]
+    lines.append(f"**{verdict}**")
+    lines.append("")
+    if is_zh:
+        lines.append(
+            f"- finish证据: {'有' if summary['saw_finish'] else '无'}"
+            f"（正常/limit/filter见findings）"
+        )
+        lines.append(f"- DONE证据: {'有' if summary['saw_done'] else '无'}")
+        lines.append(f"- 事件数: {summary['event_count']}")
+        lines.append(f"- usage出现: {'是' if summary['usage_seen'] else '否'}")
+    else:
+        lines.append(f"- finish evidence: {'yes' if summary['saw_finish'] else 'none'}")
+        lines.append(f"- [DONE] evidence: {'yes' if summary['saw_done'] else 'none'}")
+        lines.append(f"- events: {summary['event_count']}")
+        lines.append(f"- usage seen: {'yes' if summary['usage_seen'] else 'no'}")
+    lines.append("")
+    for finding in core["findings"]:
+        where = "" if finding["event_index"] is None else f" @event{finding['event_index']}"
+        severity = _SEVERITY_LABELS[finding["severity"]][language]
+        lines.append(
+            f"- [{severity}] {finding['code']}{where}: "
+            f"{_explanation(finding['code'], language)}"
+        )
+    lines.append("")
+    if is_zh:
+        lines.append("## 事件序列（顺序索引，非真实时间）")
+    else:
+        lines.append("## Event sequence (order index, not real time)")
+    lines.append("")
+    for entry in core["timeline"]:
+        kind = _KIND_LABELS[entry["kind"]][language]
+        extras = []
+        if entry["finish_kind"]:
+            extras.append(f"finish={entry['finish_kind']}")
+        if entry["has_content"]:
+            extras.append("content")
+        if entry["has_tool_calls"]:
+            extras.append("tool_calls")
+        if entry["diagnostic_codes"]:
+            extras.extend(entry["diagnostic_codes"])
+        suffix = f" ({', '.join(extras)})" if extras else ""
+        lines.append(f"- #{entry['index']} {kind}{suffix}")
+    lines.append("")
+    return "\n".join(lines)
