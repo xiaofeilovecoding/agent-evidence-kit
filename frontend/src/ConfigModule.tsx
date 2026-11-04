@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { CatalogCase, ConfigCard } from "./types";
 import type { Lang } from "./i18n";
 import { t } from "./i18n";
@@ -6,6 +6,8 @@ import { adapter, isShowcase } from "./adapter";
 import { RequestFailed, isSessionError } from "./api";
 import type { AnalysisOutcome } from "./api";
 import type { ModuleStatus } from "./App";
+import type { ExportPayload } from "./types";
+import { useExportPreview } from "./useExportPreview";
 
 type Status = "empty" | "loading" | "ready" | "stale" | "error";
 
@@ -52,13 +54,16 @@ export default function ConfigModule({ lang, narrow, visible, onStatus }: Props)
   const [severityFilter, setSeverityFilter] = useState<"all" | "warning" | "error">("all");
   const [expanded, setExpanded] = useState<string | null>(null);
   const [exportFormat, setExportFormat] = useState<"json" | "md">("json");
-  const [exportPreview, setExportPreview] = useState<string | null>(null);
-  const [exportName, setExportName] = useState<string | null>(null);
-  const [showExport, setShowExport] = useState(false);
 
   const revisionRef = useRef(0);
   const abortRef = useRef<AbortController | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const exportKey = result.status === "ready" && result.resultId
+    ? JSON.stringify([result.resultId, revisionRef.current, lang, exportFormat]) : null;
+  const { preview: exportPayload, failed: exportFailed, load: loadExport,
+    invalidate: invalidateExport, getPreview: getExportPreview } = useExportPreview<ExportPayload>(exportKey);
+  const exportPreview = exportPayload?.content ?? null;
+  const showExport = exportPayload !== null;
 
   useEffect(() => {
     let cancelled = false;
@@ -72,7 +77,7 @@ export default function ConfigModule({ lang, narrow, visible, onStatus }: Props)
     };
   }, [lang]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     onStatus({ status: result.status, resultId: result.resultId });
   }, [result.status, result.resultId, onStatus]);
 
@@ -105,6 +110,7 @@ export default function ConfigModule({ lang, narrow, visible, onStatus }: Props)
   }, [lang, result.status, result.resultId]);
 
   const invalidate = useCallback(() => {
+    invalidateExport();
     revisionRef.current += 1;
     if (abortRef.current) abortRef.current.abort();
     setResult((prev) =>
@@ -112,9 +118,7 @@ export default function ConfigModule({ lang, narrow, visible, onStatus }: Props)
         ? { ...prev, status: "stale", sessionExpired: false }
         : prev,
     );
-    setShowExport(false);
-    setExportPreview(null);
-  }, []);
+  }, [invalidateExport]);
 
   const applyOutcome = useCallback((outcome: AnalysisOutcome) => {
     setResult({
@@ -126,13 +130,13 @@ export default function ConfigModule({ lang, narrow, visible, onStatus }: Props)
     });
     setExpanded(null);
     setSeverityFilter("all");
-    setShowExport(false);
-    setExportPreview(null);
+    invalidateExport();
     if (narrow) setTab("result");
-  }, [narrow]);
+  }, [narrow, lang, invalidateExport]);
 
   const runAnalysis = useCallback(
     async (promise: (signal: AbortSignal) => Promise<AnalysisOutcome>) => {
+      invalidateExport();
       const revision = ++revisionRef.current;
       if (abortRef.current) abortRef.current.abort();
       const controller = new AbortController();
@@ -168,7 +172,7 @@ export default function ConfigModule({ lang, narrow, visible, onStatus }: Props)
         }));
       }
     },
-    [applyOutcome, lang],
+    [applyOutcome, lang, invalidateExport],
   );
 
   const runCase = useCallback(
@@ -228,6 +232,7 @@ export default function ConfigModule({ lang, narrow, visible, onStatus }: Props)
   }, [invalidate, lang]);
 
   const doClear = useCallback(async () => {
+    invalidateExport();
     revisionRef.current += 1;
     if (abortRef.current) abortRef.current.abort();
     await adapter.clear("config").catch(() => undefined);
@@ -236,38 +241,25 @@ export default function ConfigModule({ lang, narrow, visible, onStatus }: Props)
     setPasteText("");
     setPasteFormatChoice("auto");
     setResult({ status: "empty", resultId: null, card: null, message: null, sessionExpired: false });
-    setShowExport(false);
-    setExportPreview(null);
     setTab("input");
-  }, []);
+  }, [invalidateExport]);
 
-  const exportSeqRef = useRef(0);
   const loadExportPreview = useCallback(async () => {
-    if (!result.resultId) return;
-    // C05: a late export response must not resurrect a stale preview.
-    const seq = ++exportSeqRef.current;
-    const rid = result.resultId;
-    const reqFormat = exportFormat;
-    const reqLang = lang;
-    const payload = await adapter.export(rid, reqLang, reqFormat);
-    if (exportSeqRef.current !== seq) return;
-    setExportPreview(payload.content);
-    setExportName(payload.filename);
-    setShowExport(true);
-  }, [exportFormat, lang, result.resultId]);
+    if (result.status !== "ready" || !result.resultId) return;
+    await loadExport(() => adapter.export(result.resultId!, lang, exportFormat));
+  }, [exportFormat, lang, result.resultId, result.status, loadExport]);
 
   const downloadExport = useCallback(() => {
-    if (!exportPreview || !exportName) return;
-    const blob = new Blob([exportPreview], {
-      type: exportFormat === "json" ? "application/json" : "text/markdown",
-    });
+    const current = getExportPreview();
+    if (!current) return;
+    const blob = new Blob([current.content], { type: current.content_type });
     const url = URL.createObjectURL(blob);
     const anchor = document.createElement("a");
     anchor.href = url;
-    anchor.download = exportName;
+    anchor.download = current.filename;
     anchor.click();
     URL.revokeObjectURL(url);
-  }, [exportFormat, exportName, exportPreview]);
+  }, [getExportPreview]);
 
   const inputDisabled = isShowcase;
   const hasPendingInput =
@@ -445,8 +437,7 @@ export default function ConfigModule({ lang, narrow, visible, onStatus }: Props)
               value={exportFormat}
               onChange={(event) => {
                 setExportFormat(event.target.value as "json" | "md");
-                setShowExport(false);
-                setExportPreview(null);
+                invalidateExport();
               }}
               aria-label={t("exportPreview", lang)}
             >
@@ -457,6 +448,7 @@ export default function ConfigModule({ lang, narrow, visible, onStatus }: Props)
               {t("exportPreview", lang)}
             </button>
           </div>
+          {exportFailed && <p className="status-banner error">{t("networkError", lang)}</p>}
           {showExport && exportPreview !== null && (
             <div className="export-preview">
               <pre data-testid="export-preview">{exportPreview}</pre>

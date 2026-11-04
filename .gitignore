@@ -9,3 +9,7 @@ test-results/
 *.egg-info/
 build/
 artifacts/
+.env
+.env.*
+!.env.example
+!frontend/.env.showcase

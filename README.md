@@ -35,7 +35,8 @@ secrets.
 ## 30-second demo (from a source checkout, no key)
 
 ```bash
-git clone <repository-url> && cd agent-evidence-kit   # URL set when the repo is published
+git clone https://github.com/xiaofeilovecoding/agent-evidence-kit.git
+cd agent-evidence-kit
 pip install -e ".[web]"
 python -m agent_evidence_kit web                      # opens http://127.0.0.1:7411
 ```
@@ -89,7 +90,8 @@ input. The web UI and CLI produce identical cards for identical input.
 ## Development
 
 ```bash
-git clone <repo> && cd agent-evidence-kit
+git clone https://github.com/xiaofeilovecoding/agent-evidence-kit.git
+cd agent-evidence-kit
 python -m unittest tests.test_config_core tests.test_stream_core -v   # cores (stdlib only)
 pip install -e ".[web]" httpx && python -m unittest tests.test_web -v  # HTTP layer
 python scripts/build_frontend.py                                       # build + sync web assets

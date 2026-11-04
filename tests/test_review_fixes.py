@@ -83,39 +83,28 @@ class ReviewFixJourneys(unittest.TestCase):
 
     # ---- C04 ----
     def test_c04_idle_page_does_not_render_loop(self):
+        self.page.add_init_script("""window.__commits = 0;
+          window.__REACT_DEVTOOLS_GLOBAL_HOOK__ = {
+            supportsFiber: true, renderers: new Map(),
+            inject(r) { this.renderers.set(1, r); return 1; },
+            onCommitFiberRoot() { window.__commits++; },
+            onCommitFiberUnmount() {}
+          };""")
         self.page.goto(BASE)
-        # Install a commit counter via React DevTools hook equivalent:
-        # count DOM mutations instead (no DevTools dependency).
-        self.page.evaluate(
-            """() => {
-              window.__mut = 0;
-              const obs = new MutationObserver((m) => { window.__mut += m.length; });
-              obs.observe(document.getElementById("root"), { subtree: true, childList: true, attributes: true, characterData: true });
-            }"""
-        )
-        self.page.wait_for_timeout(1500)
-        idle_1 = self.page.evaluate("window.__mut")
-        self.page.wait_for_timeout(1500)
-        idle_2 = self.page.evaluate("window.__mut")
-        self.assertEqual(idle_2, idle_1,
-                         f"idle page keeps mutating the DOM ({idle_1} -> {idle_2})")
 
-        # After interacting, the page must settle again.
+        def assert_settled():
+            self.page.wait_for_load_state("networkidle")
+            first = self.page.evaluate("window.__commits")
+            self.assertGreater(first, 0, "React commit counter was not installed")
+            self.page.wait_for_timeout(200)
+            self.assertEqual(self.page.evaluate("window.__commits"), first)
+
+        assert_settled()
         self.page.get_by_role("button", name="带env_vars的http服务残留提示").first.click()
         self.wait_view("config")
-        self.page.evaluate("window.__mut = 0")
-        self.page.wait_for_timeout(1500)
-        after_1 = self.page.evaluate("window.__mut")
-        self.page.wait_for_timeout(1500)
-        after_2 = self.page.evaluate("window.__mut")
-        self.assertEqual(after_2, after_1, "result page keeps mutating while idle")
-
-        # Language switch works and settles.
+        assert_settled()
         self.page.get_by_role("button", name="English").click()
-        self.page.wait_for_selector(".config-module .outcome-banner")
-        self.page.evaluate("window.__mut = 0")
-        self.page.wait_for_timeout(1200)
-        self.assertEqual(self.page.evaluate("window.__mut"), 0)
+        assert_settled()
 
     # ---- C03 ----
     def test_c03_combined_preview_invalidates_on_related_change(self):
@@ -153,30 +142,29 @@ class ReviewFixJourneys(unittest.TestCase):
 
     # ---- C05 ----
     def test_c05_delayed_rerender_does_not_overwrite_new_result(self):
-        route_lock = threading.Event()
+        held = []
+        pattern = "**/api/results/*?lang=en*"
 
-        def handle_route(route):
-            # Hold the language re-render response until the newer result
-            # has been produced.
-            route_lock.wait(10)
-            route.continue_()
+        def hold(route):
+            held.append((route, route.fetch()))
 
-        self.page.route("**/api/results/*?lang=en*", handle_route)
+        self.page.route(pattern, hold)
         self.page.goto(BASE)
         self.page.get_by_role("button", name="带env_vars的http服务残留提示").first.click()
         self.wait_view("config")
         self.page.get_by_role("button", name="English").click()
-        # Give the intercepted re-render time to reach the pause.
-        self.page.wait_for_timeout(300)
+        for _ in range(100):
+            if held:
+                break
+            self.page.wait_for_timeout(10)
+        self.assertEqual(len(held), 1, "old response must still be held")
         self.page.get_by_role("button", name="plain stdio service, structure projection only").first.click()
-        self.wait_view("config")
-        self.page.wait_for_selector(".status-banner.loading", state="detached")
         self.page.wait_for_selector("text=warnings: 0")
-        body_now = self.page.inner_text("body")
-        self.assertIn("warnings: 0", body_now)
-        # Release the stale re-render: the display must stay the new result.
-        route_lock.set()
-        self.page.wait_for_timeout(800)
+        route, response = held.pop()
+        with self.page.expect_response(pattern) as delivered:
+            route.fulfill(response=response)
+        delivered.value.body()
+        self.page.evaluate("() => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)))")
         body_after = self.page.inner_text("body")
         self.assertIn("warnings: 0", body_after)
         self.assertNotIn("warnings: 2", body_after)

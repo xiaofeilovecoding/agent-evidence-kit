@@ -32,7 +32,7 @@ jobs:
       - name: Install with web extra
         run: pip install -e ".[web]" httpx
       - name: Run HTTP layer tests
-        run: python -m unittest tests.test_web -v
+        run: python -m unittest tests.test_web tests.test_clear_race -v
 
   frontend:
     runs-on: ubuntu-latest
@@ -51,3 +51,15 @@ jobs:
         run: npm run build
       - name: Build sample showcase
         run: npm run build:showcase
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install browser test dependencies
+        working-directory: .
+        run: |
+          python -m pip install -e ".[web]" httpx playwright
+          python -m playwright install --with-deps chromium
+          python scripts/build_frontend.py --sync-only
+      - name: Run real browser and delayed-response regressions
+        working-directory: .
+        run: python -m unittest tests.test_browser tests.test_review_fixes tests.test_export_races -v

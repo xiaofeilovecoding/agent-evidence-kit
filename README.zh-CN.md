@@ -18,7 +18,8 @@ Agent 出问题时，最快的帮助来自分享证据——但配置和流抓�
 ## 30秒演示（从源码检出运行、无 Key）
 
 ```bash
-git clone <repository-url> && cd agent-evidence-kit   # 仓库地址在公开发布时提供
+git clone https://github.com/xiaofeilovecoding/agent-evidence-kit.git
+cd agent-evidence-kit   # 仓库地址在公开发布时提供
 pip install -e ".[web]"
 python -m agent_evidence_kit web                      # 打开 http://127.0.0.1:7411
 ```
@@ -60,7 +61,8 @@ python -m agent_evidence_kit web --no-open --port 7411
 ## 开发
 
 ```bash
-git clone <repo> && cd agent-evidence-kit
+git clone https://github.com/xiaofeilovecoding/agent-evidence-kit.git
+cd agent-evidence-kit
 python -m unittest tests.test_config_core tests.test_stream_core -v   # 双核心（仅标准库）
 pip install -e ".[web]" httpx && python -m unittest tests.test_web -v  # HTTP 层
 python scripts/build_frontend.py                                       # 构建并同步 Web 资产

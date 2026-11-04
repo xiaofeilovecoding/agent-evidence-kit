@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useRef, useState } from "react";
-import type { Lang, ModuleId } from "./types";
+import { useCallback, useState } from "react";
+import type { ExportPayload, Lang, ModuleId } from "./types";
 import { t } from "./i18n";
 import { adapter, isShowcase } from "./adapter";
 import type { ModuleStatus } from "./App";
+import { useExportPreview } from "./useExportPreview";
 
 interface Props {
   lang: Lang;
@@ -19,14 +20,6 @@ export default function CombinedExport({ lang, statuses }: Props) {
   const [includeConfig, setIncludeConfig] = useState(false);
   const [includeStream, setIncludeStream] = useState(false);
   const [format, setFormat] = useState<"json" | "md">("md");
-  const [preview, setPreview] = useState<{
-    content: string;
-    filename: string;
-    items: string[];
-    snapshotKey: string;
-  } | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const requestSeqRef = useRef(0);
 
   const configReady = statuses.config.status === "ready" && statuses.config.resultId !== null;
   const streamReady = statuses.stream.status === "ready" && statuses.stream.resultId !== null;
@@ -48,44 +41,32 @@ export default function CombinedExport({ lang, statuses }: Props) {
     format,
   });
 
-  useEffect(() => {
-    setPreview((prev) => (prev && prev.snapshotKey === snapshotKey ? prev : null));
-  }, [snapshotKey]);
+  const { preview, failed, getPreview, load, invalidate } = useExportPreview<
+    ExportPayload & { items: ModuleId[] }
+  >(selectedItems.length ? snapshotKey : null);
 
   const loadPreview = useCallback(async () => {
-    setError(null);
-    setPreview(null);
     const items = selectedItems;
     if (items.length === 0) return;
-    const seq = ++requestSeqRef.current;
-    const key = snapshotKey;
-    try {
+    await load(async () => {
       const payload = await adapter.exportCombined(items, lang, format);
-      // A late response must not restore an invalidated preview (C03).
-      if (requestSeqRef.current !== seq) return;
-      setPreview({
-        content: payload.content,
-        filename: payload.filename,
-        items: items.map((i) => i.module),
-        snapshotKey: key,
-      });
-    } catch {
-      if (requestSeqRef.current === seq) setError(t("networkError", lang));
-    }
-  }, [includeConfig, includeStream, configReady, streamReady, statuses, lang, format]);
+      return { ...payload, items: items.map((i) => i.module) };
+    });
+  }, [snapshotKey, lang, format, load]);
 
   const downloadExport = useCallback(() => {
-    if (!preview) return;
-    const blob = new Blob([preview.content], {
-      type: format === "json" ? "application/json" : "text/markdown",
+    const current = getPreview();
+    if (!current) return;
+    const blob = new Blob([current.content], {
+      type: current.content_type,
     });
     const url = URL.createObjectURL(blob);
     const anchor = document.createElement("a");
     anchor.href = url;
-    anchor.download = preview.filename;
+    anchor.download = current.filename;
     anchor.click();
     URL.revokeObjectURL(url);
-  }, [preview, format]);
+  }, [getPreview]);
 
   if (isShowcase) return null;
 
@@ -106,7 +87,7 @@ export default function CombinedExport({ lang, statuses }: Props) {
               disabled={!configReady}
               onChange={(e) => {
                 setIncludeConfig(e.target.checked);
-                setPreview(null);
+                invalidate();
               }}
             />
             <span>
@@ -123,7 +104,7 @@ export default function CombinedExport({ lang, statuses }: Props) {
               disabled={!streamReady}
               onChange={(e) => {
                 setIncludeStream(e.target.checked);
-                setPreview(null);
+                invalidate();
               }}
             />
             <span>
@@ -138,7 +119,7 @@ export default function CombinedExport({ lang, statuses }: Props) {
               value={format}
               onChange={(e) => {
                 setFormat(e.target.value as "json" | "md");
-                setPreview(null);
+                invalidate();
               }}
               aria-label={t("exportPreview", lang)}
             >
@@ -153,7 +134,7 @@ export default function CombinedExport({ lang, statuses }: Props) {
               {t("exportPreview", lang)}
             </button>
           </div>
-          {error && <p className="status-banner error">{error}</p>}
+          {failed && <p className="status-banner error">{t("networkError", lang)}</p>}
           {preview && (
             <div className="export-preview">
               <div className="combined-meta">
