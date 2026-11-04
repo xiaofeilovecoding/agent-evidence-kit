@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import type { ReactNode } from "react";
 import type { CatalogCase, ConfigCard } from "./types";
 import type { Lang } from "./i18n";
 import { t } from "./i18n";
@@ -6,8 +7,8 @@ import { adapter, isShowcase } from "./adapter";
 import { RequestFailed, isSessionError } from "./api";
 import type { AnalysisOutcome } from "./api";
 import type { ModuleStatus } from "./App";
-import type { ExportPayload } from "./types";
-import { useExportPreview } from "./useExportPreview";
+import EvidenceMark from "./EvidenceMark";
+import ShareBlock from "./ShareBlock";
 
 type Status = "empty" | "loading" | "ready" | "stale" | "error";
 
@@ -21,9 +22,11 @@ interface ResultState {
 
 interface Props {
   lang: Lang;
-  narrow: boolean;
   visible: boolean;
   onStatus: (status: ModuleStatus) => void;
+  combinedSlot?: ReactNode;
+  scenario?: string | null;
+  onScenarioConsumed?: () => void;
 }
 
 function formatBytes(size: number): string {
@@ -37,7 +40,14 @@ function guessFormat(text: string): "json" | "toml" {
   return "toml";
 }
 
-export default function ConfigModule({ lang, narrow, visible, onStatus }: Props) {
+export default function ConfigModule({
+  lang,
+  visible,
+  onStatus,
+  combinedSlot,
+  scenario,
+  onScenarioConsumed,
+}: Props) {
   const [cases, setCases] = useState<CatalogCase[]>([]);
   const [tab, setTab] = useState<"input" | "result">("input");
   const [inputTab, setInputTab] = useState<"examples" | "file" | "paste">("examples");
@@ -45,25 +55,19 @@ export default function ConfigModule({ lang, narrow, visible, onStatus }: Props)
   const [pendingFormat, setPendingFormat] = useState<"json" | "toml">("json");
   const [pendingInfo, setPendingInfo] = useState<string | null>(null);
   const [pasteText, setPasteText] = useState("");
-  // R02: explicit, correctable format choice for pasted text. "auto" keeps
-  // the guess as the default but the user can always override it.
   const [pasteFormatChoice, setPasteFormatChoice] = useState<"auto" | "json" | "toml">("auto");
   const [result, setResult] = useState<ResultState>({
     status: "empty", resultId: null, card: null, message: null, sessionExpired: false,
   });
   const [severityFilter, setSeverityFilter] = useState<"all" | "warning" | "error">("all");
   const [expanded, setExpanded] = useState<string | null>(null);
-  const [exportFormat, setExportFormat] = useState<"json" | "md">("json");
+  const [clearState, setClearState] = useState<"idle" | "clearing" | "unconfirmed">("idle");
+  const [clearNote, setClearNote] = useState<"success" | null>(null);
+  const [inputRevision, setInputRevision] = useState(0);
 
   const revisionRef = useRef(0);
   const abortRef = useRef<AbortController | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
-  const exportKey = result.status === "ready" && result.resultId
-    ? JSON.stringify([result.resultId, revisionRef.current, lang, exportFormat]) : null;
-  const { preview: exportPayload, failed: exportFailed, load: loadExport,
-    invalidate: invalidateExport, getPreview: getExportPreview } = useExportPreview<ExportPayload>(exportKey);
-  const exportPreview = exportPayload?.content ?? null;
-  const showExport = exportPayload !== null;
 
   useEffect(() => {
     let cancelled = false;
@@ -77,17 +81,15 @@ export default function ConfigModule({ lang, narrow, visible, onStatus }: Props)
     };
   }, [lang]);
 
-  useLayoutEffect(() => {
+  useEffect(() => {
     onStatus({ status: result.status, resultId: result.resultId });
   }, [result.status, result.resultId, onStatus]);
 
-  // Re-render the current result when the language changes, without
-  // re-analysis. If the session is gone, offer a clear restart entry.
+  // Language re-render bound to the exact result (C05): a late response
+  // can never overwrite a newer analysis.
   useEffect(() => {
     if (result.status !== "ready" || !result.resultId) return;
     if (result.card && result.card.language === lang) return;
-    // C05: bind the re-render to this exact result; a late response must
-    // never overwrite a newer analysis result.
     const rid = result.resultId;
     let cancelled = false;
     adapter.rerender(rid, lang).then((card) => {
@@ -110,7 +112,6 @@ export default function ConfigModule({ lang, narrow, visible, onStatus }: Props)
   }, [lang, result.status, result.resultId]);
 
   const invalidate = useCallback(() => {
-    invalidateExport();
     revisionRef.current += 1;
     if (abortRef.current) abortRef.current.abort();
     setResult((prev) =>
@@ -118,7 +119,9 @@ export default function ConfigModule({ lang, narrow, visible, onStatus }: Props)
         ? { ...prev, status: "stale", sessionExpired: false }
         : prev,
     );
-  }, [invalidateExport]);
+    setClearNote(null);
+    setInputRevision((r) => r + 1);
+  }, []);
 
   const applyOutcome = useCallback((outcome: AnalysisOutcome) => {
     setResult({
@@ -130,13 +133,18 @@ export default function ConfigModule({ lang, narrow, visible, onStatus }: Props)
     });
     setExpanded(null);
     setSeverityFilter("all");
-    invalidateExport();
-    if (narrow) setTab("result");
-  }, [narrow, lang, invalidateExport]);
+    setClearNote(null);
+    setInputRevision((r) => r + 1);
+    // On narrow viewports switch to the result view (≤767 switch).
+    try {
+      if (window.innerWidth <= 767) setTab("result");
+    } catch {
+      /* jsdom-less safety */
+    }
+  }, [lang]);
 
   const runAnalysis = useCallback(
     async (promise: (signal: AbortSignal) => Promise<AnalysisOutcome>) => {
-      invalidateExport();
       const revision = ++revisionRef.current;
       if (abortRef.current) abortRef.current.abort();
       const controller = new AbortController();
@@ -144,7 +152,7 @@ export default function ConfigModule({ lang, narrow, visible, onStatus }: Props)
       setResult((prev) => ({ ...prev, status: "loading", message: null, sessionExpired: false }));
       try {
         const outcome = await promise(controller.signal);
-        if (revision !== revisionRef.current) return; // late response
+        if (revision !== revisionRef.current) return;
         applyOutcome(outcome);
       } catch (error) {
         if (revision !== revisionRef.current) return;
@@ -172,7 +180,7 @@ export default function ConfigModule({ lang, narrow, visible, onStatus }: Props)
         }));
       }
     },
-    [applyOutcome, lang, invalidateExport],
+    [applyOutcome, lang],
   );
 
   const runCase = useCallback(
@@ -184,6 +192,14 @@ export default function ConfigModule({ lang, narrow, visible, onStatus }: Props)
     },
     [lang, runAnalysis],
   );
+
+  // Scenario entries (U02): App may ask this module to run a fixture.
+  useEffect(() => {
+    if (!scenario) return;
+    runCase(scenario);
+    if (onScenarioConsumed) onScenarioConsumed();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scenario]);
 
   const analyzePending = useCallback(() => {
     if (inputTab === "paste") {
@@ -231,44 +247,52 @@ export default function ConfigModule({ lang, narrow, visible, onStatus }: Props)
     reader.readAsArrayBuffer(file);
   }, [invalidate, lang]);
 
+  /** S02 clear state machine: local revoke is immediate; the server clear
+   * is confirmed separately; failure leaves a retry that never re-erases
+   * the user's new input. */
   const doClear = useCallback(async () => {
-    invalidateExport();
     revisionRef.current += 1;
     if (abortRef.current) abortRef.current.abort();
-    await adapter.clear("config").catch(() => undefined);
     setPendingBytes(null);
     setPendingInfo(null);
     setPasteText("");
     setPasteFormatChoice("auto");
     setResult({ status: "empty", resultId: null, card: null, message: null, sessionExpired: false });
     setTab("input");
-  }, [invalidateExport]);
+    setClearState("clearing");
+    setClearNote(null);
+    try {
+      await adapter.clear("config");
+      setClearState("idle");
+      setClearNote("success");
+    } catch {
+      setClearState("unconfirmed");
+    }
+  }, []);
 
-  const loadExportPreview = useCallback(async () => {
-    if (result.status !== "ready" || !result.resultId) return;
-    await loadExport(() => adapter.export(result.resultId!, lang, exportFormat));
-  }, [exportFormat, lang, result.resultId, result.status, loadExport]);
+  const retryClear = useCallback(async () => {
+    setClearState("clearing");
+    try {
+      await adapter.clear("config");
+      setClearState("idle");
+      setClearNote("success");
+    } catch {
+      setClearState("unconfirmed");
+    }
+  }, []);
 
-  const downloadExport = useCallback(() => {
-    const current = getExportPreview();
-    if (!current) return;
-    const blob = new Blob([current.content], { type: current.content_type });
-    const url = URL.createObjectURL(blob);
-    const anchor = document.createElement("a");
-    anchor.href = url;
-    anchor.download = current.filename;
-    anchor.click();
-    URL.revokeObjectURL(url);
-  }, [getExportPreview]);
-
-  const inputDisabled = isShowcase;
-  const hasPendingInput =
-    inputTab === "paste" ? pasteText.trim().length > 0 : pendingBytes !== null;
   const effectivePasteFormat =
     pasteFormatChoice === "auto" ? guessFormat(pasteText) : pasteFormatChoice;
+  const hasPendingInput =
+    inputTab === "paste" ? pasteText.trim().length > 0 : pendingBytes !== null;
+  const card = result.card;
+  const questionEntries: { caseId: string; q: string; desc: string }[] = [
+    { caseId: "http-residue", q: t("qConfigMigration", lang), desc: t("qConfigDesc", lang) },
+    { caseId: "plain-stdio", q: t("qNormalCompare", lang), desc: t("qNormalDesc", lang) },
+  ];
 
   const inputPanel = (
-    <section className="panel input-panel" aria-label={t("moduleConfig", lang)}>
+    <section className="panel input-pane" aria-label={t("moduleConfig", lang)}>
       {isShowcase && (
         <div className="showcase-banner" role="note">
           {t("showcaseBanner", lang)}
@@ -350,6 +374,7 @@ export default function ConfigModule({ lang, narrow, visible, onStatus }: Props)
               value={pasteFormatChoice}
               onChange={(event) => {
                 setPasteFormatChoice(event.target.value as "auto" | "json" | "toml");
+                invalidate();
               }}
               aria-label={t("formatLabel", lang)}
             >
@@ -366,6 +391,7 @@ export default function ConfigModule({ lang, narrow, visible, onStatus }: Props)
         </div>
       )}
 
+      <p className="input-warning">{t("noCommandExec", lang)}</p>
       <div className="input-actions">
         <button
           className="primary analyze-button"
@@ -378,31 +404,53 @@ export default function ConfigModule({ lang, narrow, visible, onStatus }: Props)
           {t("clearThisModule", lang)}
         </button>
       </div>
+      {clearState === "unconfirmed" && (
+        <div className="clear-banner error" role="alert">
+          <span>{t("clearUnconfirmed", lang)}</span>
+          <button className="ghost small" onClick={() => void retryClear()}>
+            {t("retryClear", lang)}
+          </button>
+        </div>
+      )}
+      {clearState === "idle" && clearNote === "success" && (
+        <div className="clear-banner" role="status">
+          <span>{t("clearSuccess", lang)}</span>
+        </div>
+      )}
     </section>
   );
 
-  const card = result.card;
   const resultPanel = (
-    <section className="panel result-panel" aria-label={t("resultTab", lang)}>
+    <section className="panel result-pane" aria-label={t("resultTab", lang)}>
       {result.status === "empty" && (
         <div className="empty-state">
+          <EvidenceMark accent="var(--primary)" size={24} />
           <h2>{t("emptyTitle", lang)}</h2>
           <p>{t("emptyBody", lang)}</p>
-          {cases.map((entry) => (
-            <button key={entry.case_id} className="example-card" onClick={() => runCase(entry.case_id)}>
-              <span className="example-name">{entry.description[lang] ?? entry.case_id}</span>
-            </button>
-          ))}
+          <div className="question-entries">
+            {questionEntries.map((entry) => (
+              <button
+                key={entry.caseId}
+                className="question-card"
+                onClick={() => runCase(entry.caseId)}
+              >
+                <span className="question-q">{entry.q}</span>
+                <span className="question-desc">{entry.desc}</span>
+                <span className="question-tag">{t("sampleTag", lang)}</span>
+              </button>
+            ))}
+          </div>
         </div>
       )}
       {result.status === "loading" && (
         <div className="status-banner loading" role="status">
-          {t("loading", lang)}
+          <EvidenceMark accent="var(--primary)" size={20} busy />
+          <span>{t("loading", lang)}</span>
         </div>
       )}
       {result.status === "stale" && card && (
         <div className="status-banner stale" role="alert">
-          {t("stale", lang)}
+          {t("staleNotice", lang)}
         </div>
       )}
       {result.status === "error" && (
@@ -429,69 +477,43 @@ export default function ConfigModule({ lang, narrow, visible, onStatus }: Props)
           setExpanded={setExpanded}
         />
       )}
-      {card && (
-        <div className="export-block">
-          <div className="export-controls">
-            <span>{t("exportPreview", lang)}</span>
-            <select
-              value={exportFormat}
-              onChange={(event) => {
-                setExportFormat(event.target.value as "json" | "md");
-                invalidateExport();
-              }}
-              aria-label={t("exportPreview", lang)}
-            >
-              <option value="json">JSON</option>
-              <option value="md">Markdown</option>
-            </select>
-            <button className="ghost" onClick={() => void loadExportPreview()}>
-              {t("exportPreview", lang)}
-            </button>
-          </div>
-          {exportFailed && <p className="status-banner error">{t("networkError", lang)}</p>}
-          {showExport && exportPreview !== null && (
-            <div className="export-preview">
-              <pre data-testid="export-preview">{exportPreview}</pre>
-              <p className="hint">{t("exportNote", lang)}</p>
-              <button className="primary" onClick={downloadExport}>
-                {t("download", lang)}
-              </button>
-            </div>
-          )}
-        </div>
+      {result.resultId && (
+        <ShareBlock
+          lang={lang}
+          module="config"
+          resultId={result.resultId}
+          inputRevision={inputRevision}
+        />
       )}
+      {combinedSlot}
     </section>
   );
 
   return (
-    <>
-      {narrow && visible && (
-        <div className="segmented view-switch">
-          <button
-            className={tab === "input" ? "segment active" : "segment"}
-            onClick={() => setTab("input")}
-          >
-            {t("inputTab", lang)}
-          </button>
-          <button
-            className={tab === "result" ? "segment active" : "segment"}
-            onClick={() => setTab("result")}
-          >
-            {t("resultTab", lang)}
-          </button>
-        </div>
-      )}
-      {!narrow ? (
-        <div className="config-columns" style={{ display: "grid", gridTemplateColumns: "320px 1fr", gap: "24px" }}>
-          {inputPanel}
-          {resultPanel}
-        </div>
-      ) : (
-        <>{tab === "input" ? inputPanel : resultPanel}</>
-      )}
-    </>
+    <div className="module-body" data-view={tab} data-visible={visible ? "true" : "false"}>
+      <div className="segmented view-switch">
+        <button
+          className={tab === "input" ? "segment active" : "segment"}
+          onClick={() => setTab("input")}
+        >
+          {t("inputTab", lang)}
+        </button>
+        <button
+          className={tab === "result" ? "segment active" : "segment"}
+          onClick={() => setTab("result")}
+        >
+          {t("resultTab", lang)}
+        </button>
+      </div>
+      <div className="module-columns">
+        {inputPanel}
+        {resultPanel}
+      </div>
+    </div>
   );
 }
+
+const inputDisabled = isShowcase;
 
 function ResultCardView(props: {
   card: ConfigCard;
@@ -508,6 +530,9 @@ function ResultCardView(props: {
         <h2>{t("errorTitle", lang)}</h2>
         <p className="finding-code">{card.error.code}</p>
         <p>{card.error.explanation}</p>
+        {card.error.next_steps && (
+          <NextStepsView steps={card.error.next_steps} lang={lang} />
+        )}
       </div>
     );
   }
@@ -520,12 +545,16 @@ function ResultCardView(props: {
   return (
     <div className="result-view" data-testid="result-view">
       <div className={`outcome-banner ${card.outcome}`}>
-        {card.outcome === "needs_review" ? t("findingsTitle", lang) : t("noFindingsTitle", lang)}
+        {card.outcome === "needs_review"
+          ? t("findingsTitle", lang)
+          : t("noFindingsTitle", lang)}
         <span className="summary-line">
           {t("servicesAnalyzed", lang)}: {card.summary.service_count} ·{" "}
-          {t("warnings", lang)}: {card.summary.warning_count} · {t("errors", lang)}: {card.summary.error_count}
+          {t("warnings", lang)}: {card.summary.warning_count} · {t("errors", lang)}:{" "}
+          {card.summary.error_count}
         </span>
       </div>
+      {card.next_steps && <NextStepsView steps={card.next_steps} lang={lang} />}
       <p className="scope-note">{t("scopeNote", lang)}</p>
       <div className="filter-row" role="group" aria-label={t("filter", lang)}>
         {(["all", "warning", "error"] as const).map((value) => (
@@ -558,12 +587,45 @@ function ResultCardView(props: {
   );
 }
 
+export function NextStepsView({ steps, lang }: { steps: { observed: string; meaning: string; next_steps: string; does_not_prove: string }; lang: Lang }) {
+  return (
+    <dl className="next-steps" data-testid="next-steps">
+      <div>
+        <dt>{t("observedLabel", lang)}</dt>
+        <dd>{steps.observed}</dd>
+      </div>
+      <div>
+        <dt>{t("meaningLabel", lang)}</dt>
+        <dd>{steps.meaning}</dd>
+      </div>
+      <div>
+        <dt>{t("nextStepsLabel", lang)}</dt>
+        <dd>{steps.next_steps}</dd>
+      </div>
+      <div>
+        <dt>{t("cannotProveLabel", lang)}</dt>
+        <dd>{steps.does_not_prove}</dd>
+      </div>
+    </dl>
+  );
+}
+
 function ServiceGroup(props: {
   service: {
     id: string;
     transport: string;
     fields: Record<string, { present: boolean; type: string | null }>;
-    findings: { code: string; severity: string; explanation: string }[];
+    findings: {
+      code: string;
+      severity: string;
+      explanation: string;
+      next_steps?: {
+        observed: string;
+        meaning: string;
+        next_steps: string;
+        does_not_prove: string;
+      };
+    }[];
   };
   lang: Lang;
   expanded: boolean;
@@ -575,12 +637,18 @@ function ServiceGroup(props: {
   );
   return (
     <div className={hasProblems ? "service-group flagged" : "service-group"}>
-      <button className="service-header" onClick={props.onToggle} aria-expanded={props.expanded}>
+      <button
+        className="service-header"
+        onClick={props.onToggle}
+        aria-expanded={props.expanded}
+      >
         <span className="service-id">{service.id}</span>
         <span className="service-transport">
           {t("transport", lang)}: {service.transport}
         </span>
-        <span className="chevron" aria-hidden="true">{props.expanded ? "▾" : "▸"}</span>
+        <span className="chevron" aria-hidden="true">
+          {props.expanded ? "▾" : "▸"}
+        </span>
       </button>
       {props.expanded && (
         <div className="service-body">
@@ -589,9 +657,7 @@ function ServiceGroup(props: {
             {Object.entries(service.fields).map(([name, meta]) => (
               <li key={name} className={meta.present ? "field present" : "field"}>
                 <code>{name}</code>
-                <span>
-                  {meta.present ? meta.type : t("absent", lang)}
-                </span>
+                <span>{meta.present ? meta.type : t("absent", lang)}</span>
               </li>
             ))}
           </ul>
@@ -599,7 +665,12 @@ function ServiceGroup(props: {
             {service.findings.map((finding) => (
               <li key={finding.code} className={`finding ${finding.severity}`}>
                 <span className={`badge ${finding.severity}`}>{finding.code}</span>
-                <span className="finding-text">{finding.explanation}</span>
+                <div className="finding-detail">
+                  <span className="finding-text">{finding.explanation}</span>
+                  {finding.next_steps && (
+                    <NextStepsView steps={finding.next_steps} lang={lang} />
+                  )}
+                </div>
               </li>
             ))}
           </ul>

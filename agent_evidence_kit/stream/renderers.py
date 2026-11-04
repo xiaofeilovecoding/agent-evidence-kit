@@ -5,6 +5,7 @@ stream text. All explanation strings are fixed constants below.
 """
 from __future__ import annotations
 
+from ..next_steps import NEXT_STEPS_SCHEMA_VERSION, next_steps_for
 from . import PROFILE
 
 SCHEMA_VERSION = 2
@@ -95,6 +96,9 @@ LIMITS_NOTE = {
     "en": "Fixed limits: this tool observes terminal evidence only; it does not infer real timing/throughput, provider compatibility, or authentication, and cannot judge answer correctness.",
 }
 
+_NEXT_LABEL = {"zh-CN": "下一步", "en": "Next step"}
+_CANNOT_PROVE_LABEL = {"zh-CN": "不能证明", "en": "Does not prove"}
+
 _VERDICT_LABELS = {
     "NORMAL_TERMINATION": {"zh-CN": "正常结束", "en": "Normal termination"},
     "NEEDS_REVIEW": {"zh-CN": "需要复核", "en": "Needs review"},
@@ -130,6 +134,7 @@ def render_card(core: dict, language: str, output_format: str) -> dict | str:
 def _render_json(core: dict, language: str) -> dict:
     card = {
         "schema_version": SCHEMA_VERSION,
+        "next_steps_schema_version": NEXT_STEPS_SCHEMA_VERSION,
         "profile": PROFILE,
         "language": language,
         "verdict": None,
@@ -148,8 +153,10 @@ def _render_json(core: dict, language: str) -> dict:
         }
         card["findings"] = [
             {"code": code, "severity": "error", "event_index": None,
-             "explanation": _explanation(code, language)}
+             "explanation": _explanation(code, language),
+             "next_steps": next_steps_for(code, language)}
         ]
+        card["next_steps"] = next_steps_for(code, language)
         return card
     card["verdict"] = core["verdict"]
     card["summary"] = core["summary"]
@@ -159,9 +166,12 @@ def _render_json(core: dict, language: str) -> dict:
             "severity": f["severity"],
             "event_index": f["event_index"],
             "explanation": _explanation(f["code"], language),
+            "next_steps": next_steps_for(f["code"], language),
         }
         for f in core["findings"]
     ]
+    primary = core["findings"][0]["code"] if core["findings"] else None
+    card["next_steps"] = next_steps_for(primary, language) if primary else None
     card["timeline"] = core["timeline"]
     return card
 
@@ -202,6 +212,11 @@ def _render_markdown(core: dict, language: str) -> str:
         lines.append(
             f"- [{severity}] {finding['code']}{where}: "
             f"{_explanation(finding['code'], language)}"
+        )
+        steps = next_steps_for(finding["code"], language)
+        lines.append(f"  - {_NEXT_LABEL[language]}: {steps['next_steps']}")
+        lines.append(
+            f"  - {_CANNOT_PROVE_LABEL[language]}: {steps['does_not_prove']}"
         )
     lines.append("")
     if is_zh:

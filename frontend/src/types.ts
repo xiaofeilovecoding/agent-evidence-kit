@@ -4,10 +4,18 @@ export type Severity = "warning" | "error" | "info";
 export type Lang = "zh-CN" | "en";
 export type ModuleId = "config" | "stream";
 
+export interface NextSteps {
+  observed: string;
+  meaning: string;
+  next_steps: string;
+  does_not_prove: string;
+}
+
 export interface Finding {
   code: string;
   severity: Severity;
   explanation: string;
+  next_steps?: NextSteps;
 }
 
 // ---- config module card (schema_version 1) ----
@@ -37,7 +45,8 @@ export interface ConfigErrorCard {
   outcome: "error";
   summary: ConfigSummary;
   services: never[];
-  error: { code: string; explanation: string };
+  error: { code: string; explanation: string; next_steps?: NextSteps };
+  next_steps?: NextSteps;
 }
 
 export interface ConfigSuccessCard {
@@ -47,6 +56,7 @@ export interface ConfigSuccessCard {
   outcome: "needs_review" | "not_validated";
   summary: ConfigSummary;
   services: ServiceCard[];
+  next_steps?: NextSteps;
   error?: undefined;
 }
 
@@ -75,6 +85,7 @@ export interface StreamFinding {
   severity: Severity;
   event_index: number | null;
   explanation: string;
+  next_steps?: NextSteps;
 }
 
 export interface StreamCard {
@@ -85,9 +96,12 @@ export interface StreamCard {
   summary: StreamSummary;
   findings: StreamFinding[];
   timeline: TimelineEntry[];
+  next_steps?: NextSteps;
 }
 
 export type Card = ConfigCard | StreamCard;
+
+export type Theme = "system" | "light" | "dark";
 
 export interface CatalogCase {
   case_id: string;

@@ -131,7 +131,7 @@ class BrowserJourney(unittest.TestCase):
     def assert_no_canary_outside_input(self, canary: str = CANARY):
         """Real canary check: every API response body, URL, console error,
         and the on-page results area must be canary-free."""
-        result_html = self.page.inner_html(".result-panel")
+        result_html = self.page.inner_html(".result-pane")
         header_html = self.page.inner_html(".topbar")
         self.assertNotIn(canary, result_html)
         self.assertNotIn(canary, header_html)
@@ -150,15 +150,15 @@ class BrowserJourney(unittest.TestCase):
         self.page.wait_for_selector(f'.{module}-module [data-testid="result-view"]')
 
     def result_panel(self, module: str):
-        return self.view(module).locator(".result-panel")
+        return self.view(module).locator(".result-pane")
 
     def run_config_case(self, description: str):
-        self.page.get_by_role("tab", name="配置检查").click()
+        self.page.locator(".sidebar-nav .nav-item", has_text="配置检查").click()
         self.view("config").get_by_role("button", name=description).first.click()
         self.wait_view("config")
 
     def run_stream_case(self, description: str):
-        self.page.get_by_role("tab", name="流结束检查").click()
+        self.page.locator(".sidebar-nav .nav-item", has_text="流结束检查").click()
         self.view("stream").get_by_role("button", name=description).first.click()
         self.wait_view("stream")
 
@@ -166,7 +166,7 @@ class BrowserJourney(unittest.TestCase):
     # ---- config journey (paste -> analyze -> export -> clear) ----
     def test_config_paste_journey_and_export(self):
         self.page.goto(BASE)
-        self.page.get_by_role("tab", name="配置检查").click()
+        self.page.locator(".sidebar-nav .nav-item", has_text="配置检查").click()
         self.view("config").get_by_role("tab", name="粘贴").click()
         self.view("config").locator("textarea").fill(helpers.residue_config())
         # R02: auto-detect chooses JSON here; the indicator is visible.
@@ -181,7 +181,7 @@ class BrowserJourney(unittest.TestCase):
         self.assert_no_canary_outside_input(helpers.CANARY_URL)
 
         # Export preview + download match.
-        self.result_panel("config").locator("select").select_option("md")
+        self.result_panel("config").locator(".share-row select").select_option("md")
         self.result_panel("config").get_by_role("button", name="导出预览").click()
         self.result_panel("config").locator('[data-testid="export-preview"]').wait_for()
         preview = self.result_panel("config").locator('[data-testid="export-preview"]').inner_text()
@@ -199,7 +199,7 @@ class BrowserJourney(unittest.TestCase):
     # ---- R02: TOML paste with correctable format selection ----
     def test_toml_paste_explicit_format(self):
         self.page.goto(BASE)
-        self.page.get_by_role("tab", name="配置检查").click()
+        self.page.locator(".sidebar-nav .nav-item", has_text="配置检查").click()
         self.view("config").get_by_role("tab", name="粘贴").click()
 
         # A TOML document with a [table] header starts with "[" and the
@@ -248,7 +248,7 @@ class BrowserJourney(unittest.TestCase):
     # ---- stream journey + filters + pagination (fixed) ----
     def test_stream_journey_filters_pagination(self):
         self.page.goto(BASE)
-        self.page.get_by_role("tab", name="流结束检查").click()
+        self.page.locator(".sidebar-nav .nav-item", has_text="流结束检查").click()
         self.run_stream_case("只有finish，缺[DONE]")
         body = self.page.inner_text("body")
         self.assertIn("FINISH_WITHOUT_DONE", body)
@@ -260,7 +260,7 @@ class BrowserJourney(unittest.TestCase):
         self.assert_no_canary_outside_input()
 
         # Export preview + download.
-        self.result_panel("stream").locator("select").select_option("md")
+        self.result_panel("stream").locator(".share-row select").select_option("md")
         self.result_panel("stream").get_by_role("button", name="导出预览").click()
         self.result_panel("stream").locator('[data-testid="export-preview"]').wait_for()
         preview = self.result_panel("stream").locator('[data-testid="export-preview"]').inner_text()
@@ -278,7 +278,7 @@ class BrowserJourney(unittest.TestCase):
     def test_stream_pagination_50_per_page(self):
         """122 valid chunk events: 50/page, 3 pages; filters are honest."""
         self.page.goto(BASE)
-        self.page.get_by_role("tab", name="流结束检查").click()
+        self.page.locator(".sidebar-nav .nav-item", has_text="流结束检查").click()
         self.view("stream").get_by_role("tab", name="粘贴").click()
         stream = helpers.chunk("OK") * 120 + helpers.chunk(finish="stop") + helpers.done()
         self.view("stream").locator("textarea").fill(stream)
@@ -306,7 +306,7 @@ class BrowserJourney(unittest.TestCase):
         filter (the old test's 0-expectation for an invalid stream was a
         test bug, not product behavior)."""
         self.page.goto(BASE)
-        self.page.get_by_role("tab", name="流结束检查").click()
+        self.page.locator(".sidebar-nav .nav-item", has_text="流结束检查").click()
         self.view("stream").get_by_role("tab", name="粘贴").click()
         stream = helpers.chunk("OK") + 'data: {"vendor_field": 1}\n\n'
         self.view("stream").locator("textarea").fill(stream)
@@ -318,7 +318,7 @@ class BrowserJourney(unittest.TestCase):
 
     def test_stream_compare_and_stale(self):
         self.page.goto(BASE)
-        self.page.get_by_role("tab", name="流结束检查").click()
+        self.page.locator(".sidebar-nav .nav-item", has_text="流结束检查").click()
         self.run_stream_case("只有finish，缺[DONE]")
         self.view("stream").get_by_role("button", name="与正常样例对照").click()
         self.view("stream").locator(".compare-wide").wait_for()
@@ -335,7 +335,7 @@ class BrowserJourney(unittest.TestCase):
     # ---- privacy canary with real response collection ----
     def test_canary_never_reaches_results_export_or_console(self):
         self.page.goto(BASE)
-        self.page.get_by_role("tab", name="流结束检查").click()
+        self.page.locator(".sidebar-nav .nav-item", has_text="流结束检查").click()
         self.view("stream").get_by_role("tab", name="粘贴").click()
         self.view("stream").locator("textarea").fill(
             'data: {"choices": [{"index": 0, "delta": {"content": "'
@@ -373,7 +373,7 @@ class BrowserJourney(unittest.TestCase):
         self.assertEqual([u for u in self.api_calls if "/analyze" in u], [])
         self.assertEqual(len([u for u in self.api_calls if "/stream/demo" in u]), 1)
         # Switch module: config empty state is also localized.
-        self.page.get_by_role("tab", name="Config check").click()
+        self.page.locator(".sidebar-nav .nav-item", has_text="Config check").click()
         self.assertIn("Start with a sample", self.page.inner_text("body"))
         self.page.get_by_role("button", name="中文").click()
         self.view("config").locator(".empty-state").wait_for()
@@ -389,13 +389,13 @@ class BrowserJourney(unittest.TestCase):
 
         second = self.context.new_page()
         second.goto(BASE)
-        second.get_by_role("tab", name="流结束检查").click()
+        second.locator(".sidebar-nav .nav-item", has_text="流结束检查").click()
         second.get_by_role("button", name="只有finish，缺[DONE]").first.click()
         second.wait_for_selector('.stream-module [data-testid="result-view"]')
 
         # Back to the first tab: run another analysis; with session reuse
         # this must succeed, not fail with a network/CSRF error.
-        self.page.get_by_role("tab", name="流结束检查").click()
+        self.page.locator(".sidebar-nav .nav-item", has_text="流结束检查").click()
         self.view("stream").get_by_role("button", name="只有finish，缺[DONE]").first.click()
         self.wait_view("stream")
         self.assertIn("FINISH_WITHOUT_DONE", self.page.inner_text("body"))
@@ -421,17 +421,17 @@ class BrowserJourney(unittest.TestCase):
         )
         self.assertLessEqual(overflow, 1, "expanded config detail overflows at 390px")
         # Export open as well.
-        page.locator(".config-module .result-panel .export-controls select").select_option("md")
-        page.locator(".config-module .result-panel").get_by_role("button", name="导出预览").click()
+        page.locator(".config-module .result-pane .share-row select").select_option("md")
+        page.locator(".config-module .result-pane .share-row").get_by_role("button", name="导出预览").click()
         page.locator(".config-module [data-testid='export-preview']").wait_for()
         overflow = page.evaluate(
             "document.documentElement.scrollWidth - document.documentElement.clientWidth"
         )
         self.assertLessEqual(overflow, 1, "export open overflows at 390px")
         # Input/result switch works.
-        page.get_by_role("button", name="输入", exact=True).click()
+        page.locator(".config-module .view-switch").get_by_role("button", name="输入", exact=True).click()
         page.wait_for_selector(".config-module .example-list")
-        page.get_by_role("button", name="结果", exact=True).click()
+        page.locator(".config-module .view-switch").get_by_role("button", name="结果", exact=True).click()
         page.wait_for_selector('.config-module [data-testid="result-view"]')
 
         # English + stream module expanded details too.
@@ -497,7 +497,7 @@ class BrowserJourney(unittest.TestCase):
     # ---- oversized paste error state ----
     def test_error_state_oversized_stream_paste(self):
         self.page.goto(BASE)
-        self.page.get_by_role("tab", name="流结束检查").click()
+        self.page.locator(".sidebar-nav .nav-item", has_text="流结束检查").click()
         self.view("stream").get_by_role("tab", name="粘贴").click()
         self.view("stream").locator("textarea").fill("x" * (9 * 1024 * 1024 // 1))
         self.view("stream").get_by_role("button", name="分析流").click()
@@ -509,6 +509,7 @@ class BrowserJourney(unittest.TestCase):
         self.page.goto(BASE)
         self.run_config_case("带env_vars的http服务残留提示")
         self.run_stream_case("只有finish，缺[DONE]")
+        self.page.locator(".advanced-combined summary").first.click()
         combined = self.page.locator(".combined-box")
         combined.get_by_role("checkbox").first.check()
         combined.get_by_role("checkbox").nth(1).check()
@@ -535,7 +536,7 @@ class BrowserJourney(unittest.TestCase):
         self.assertTrue(self.page.get_by_role("tab", name="文件").first.is_disabled())
         self.assertTrue(self.page.get_by_role("tab", name="粘贴").first.is_disabled())
         # Stream module sample: switch samples and check they differ.
-        self.page.get_by_role("tab", name="流结束检查").click()
+        self.page.locator(".sidebar-nav .nav-item", has_text="流结束检查").click()
         self.page.get_by_role("button", name="只有finish，缺[DONE]").first.click()
         self.page.wait_for_selector('.stream-module [data-testid="result-view"]')
         self.assertIn("FINISH_WITHOUT_DONE", self.page.inner_text("body"))
@@ -550,7 +551,7 @@ class BrowserJourney(unittest.TestCase):
         self.page.wait_for_selector(".stream-module .showcase-banner:visible")
         self.assertIn("Sample showcase", self.page.inner_text("body"))
         # Export.
-        self.result_panel("stream").locator("select").select_option("md")
+        self.result_panel("stream").locator(".share-row select").select_option("md")
         self.result_panel("stream").get_by_role(
             "button", name=re.compile("导出预览|Export preview")
         ).click()

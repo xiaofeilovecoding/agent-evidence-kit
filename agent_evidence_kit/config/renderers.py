@@ -6,6 +6,8 @@ strings come from the fixed constants below.
 """
 from __future__ import annotations
 
+from ..next_steps import NEXT_STEPS_SCHEMA_VERSION, next_steps_for, state_next_steps
+
 SCHEMA_VERSION = 1
 SCOPE = "structure_only"
 LANGUAGES = ("zh-CN", "en")
@@ -84,6 +86,9 @@ _SEVERITY_LABELS = {
     "info": {"zh-CN": "提示", "en": "info"},
 }
 
+_NEXT_LABEL = {"zh-CN": "下一步", "en": "Next step"}
+_CANNOT_PROVE_LABEL = {"zh-CN": "不能证明", "en": "Does not prove"}
+
 _SCOPE_STATEMENT = {
     "zh-CN": "范围说明：本卡片只检查配置结构，不验证任何客户端版本、连接或运行行为；结果不含任何原始配置值。",
     "en": "Scope: this card checks configuration structure only; it does not validate client versions, connectivity, or runtime behavior, and it never contains raw configuration values.",
@@ -113,6 +118,7 @@ def render_card(core: dict, language: str, output_format: str) -> dict | str:
 def _render_json(core: dict, language: str) -> dict:
     card = {
         "schema_version": SCHEMA_VERSION,
+        "next_steps_schema_version": NEXT_STEPS_SCHEMA_VERSION,
         "scope": SCOPE,
         "language": language,
         "outcome": None,
@@ -122,12 +128,17 @@ def _render_json(core: dict, language: str) -> dict:
     if "error" in core:
         code = core["error"]
         card["outcome"] = "error"
-        card["error"] = {"code": code, "explanation": _explanation(code, language)}
+        card["error"] = {
+            "code": code,
+            "explanation": _explanation(code, language),
+            "next_steps": next_steps_for(code, language),
+        }
         card["summary"] = {
             "service_count": 0,
             "warning_count": 0,
             "error_count": 0,
         }
+        card["next_steps"] = next_steps_for(code, language)
         return card
     card["outcome"] = core["outcome"]
     card["summary"] = core["summary"]
@@ -142,10 +153,15 @@ def _render_json(core: dict, language: str) -> dict:
                         "code": finding["code"],
                         "severity": finding["severity"],
                         "explanation": _explanation(finding["code"], language),
+                        "next_steps": next_steps_for(finding["code"], language),
                     }
                     for finding in service["findings"]
                 ],
             }
+        )
+    if core["outcome"] == "not_validated":
+        card["next_steps"] = state_next_steps(
+            "config", "STRUCTURE_CHECK_COMPLETE", language
         )
     return card
 
@@ -195,6 +211,13 @@ def _render_markdown(core: dict, language: str) -> str:
             lines.append(
                 f"- [{severity}] {finding['code']}: "
                 f"{_explanation(finding['code'], language)}"
+            )
+            steps = next_steps_for(finding["code"], language)
+            lines.append(
+                f"  - {_NEXT_LABEL[language]}: {steps['next_steps']}"
+            )
+            lines.append(
+                f"  - {_CANNOT_PROVE_LABEL[language]}: {steps['does_not_prove']}"
             )
         lines.append("")
     lines.append(_explanation("NOT_VALIDATED", language))

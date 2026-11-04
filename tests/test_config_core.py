@@ -149,10 +149,15 @@ class P02Privacy(TempFileCase):
         handle.write(helpers.plain_stdio_config().encode("utf-8"))
         handle.close()
         self.files.append(handle.name)
+        # The zh guidance text legitimately contains the bare word; the
+        # privacy canary is the concrete path itself.
+        basename = os.path.basename(handle.name)
+        self.assertIn("配置", basename)
         result = run_cli(["--input", handle.name])
         self.assertEqual(result.returncode, 0)
-        self.assertNotIn("配置", result.stdout)
-        self.assertNotIn("配置", result.stderr)
+        self.assertNotIn(basename, result.stdout)
+        self.assertNotIn(basename, result.stderr)
+        self.assertNotIn(self.tmp, result.stdout + result.stderr)
 
     def test_error_paths_not_leaked(self):
         missing = os.path.join(self.tmp, "zzcanaryECHO99_config.json")

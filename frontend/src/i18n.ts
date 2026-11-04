@@ -174,6 +174,104 @@ const STRINGS = {
   },
   chars: { "zh-CN": "字符", en: "chars" },
   filter: { "zh-CN": "筛选", en: "Filter" },
+  // ---- PUBLIC-READY-002 additions ----
+  noCommandExec: {
+    "zh-CN": "不会执行配置中的命令；只分析你提供的内容。",
+    en: "Commands in the config are never executed; only the content you provide is analyzed.",
+  },
+  noUploadNote: {
+    "zh-CN": "不读取账户、不扫描磁盘；只分析你粘贴或选择的内容。",
+    en: "No accounts are read and no disks are scanned; only the content you paste or choose is analyzed.",
+  },
+  sampleTag: { "zh-CN": "合成样例", en: "Synthetic sample" },
+  close: { "zh-CN": "关闭", en: "Close" },
+  help: { "zh-CN": "帮助", en: "Help" },
+  privacy: { "zh-CN": "隐私", en: "Privacy" },
+  processedLocally: { "zh-CN": "本机处理", en: "Processed locally" },
+  themeLabel: { "zh-CN": "主题", en: "Theme" },
+  themeSystem: { "zh-CN": "跟随系统", en: "System" },
+  themeLight: { "zh-CN": "浅色", en: "Light" },
+  themeDark: { "zh-CN": "深色", en: "Dark" },
+  privacyTitle: { "zh-CN": "本机处理：数据路径", en: "Processed locally: where your data goes" },
+  privacyStep1: {
+    "zh-CN": "1. 原文仅在你正在使用的输入框/文件控件中可见（这是预期显示）。",
+    en: "1. Your raw text is visible only in the input control you are using (this display is expected).",
+  },
+  privacyStep2: {
+    "zh-CN": "2. 点击分析后，内容通过本机HTTP发送给同一台机器上的本地Python服务解析；没有第三方上传、遥测或云同步。",
+    en: "2. When you click Analyze, the content goes over local HTTP to the Python service on this same machine for parsing; there is no third-party upload, telemetry, or cloud sync.",
+  },
+  privacyStep3: {
+    "zh-CN": "3. 服务端只保留有界的结构投影（presence/type/kind等事实），留在内存中；原值不写入结果、导出或日志。临时解析内存不是安全擦除。",
+    en: "3. The server keeps only a bounded structural projection (presence/type/kind facts) in memory; raw values never enter results, exports, or logs. Temporary parse memory is not secure erasure.",
+  },
+  privacyStep4: {
+    "zh-CN": "4. 只有你主动点击复制/下载，证据才会离开本会话内存；下载文件与剪贴板内容不受“清空”影响。浏览器扩展或同用户恶意进程不在防护承诺内。",
+    en: "4. Evidence leaves this session's memory only when you click Copy or Download; downloads and clipboard are not affected by Clear. Browser extensions or other processes running as your user are out of scope.",
+  },
+  privacyNote: {
+    "zh-CN": "安装依赖与点击外链（如文档链接）会联网，均需你主动操作。偏好（语言/主题）是唯一持久化数据。",
+    en: "Installing dependencies and clicking external links (e.g. documentation) touch the network, and only on your explicit action. Preferences (language/theme) are the only persisted data.",
+  },
+  helpTitle: { "zh-CN": "快速上手", en: "Quick start" },
+  helpStep1: {
+    "zh-CN": "选择一个模块：配置检查分析MCP服务器配置（JSON/TOML），流结束检查分析chat-completions SSE抓包。",
+    en: "Pick a module: Config check analyzes MCP server configs (JSON/TOML); Stream end check analyzes chat-completions SSE captures.",
+  },
+  helpStep2: {
+    "zh-CN": "从示例开始或粘贴/拖入自己的内容，点击分析。",
+    en: "Start from a sample or paste/drop your own content, then click Analyze.",
+  },
+  helpStep3: {
+    "zh-CN": "查看结论与每条发现的“已观察/含义/下一步”，然后复制或下载证据。",
+    en: "Read the verdict and each finding's observed/meaning/next-step, then copy or download the evidence.",
+  },
+  qConfigMigration: { "zh-CN": "配置迁移后服务异常？", en: "Config changed and a service broke?" },
+  qStreamEnded: { "zh-CN": "流突然结束，原因不明？", en: "Stream ended without a clear reason?" },
+  qNormalCompare: { "zh-CN": "想看一条正常流长什么样？", en: "What does a healthy stream look like?" },
+  qConfigDesc: {
+    "zh-CN": "用样例检查传输冲突与迁移残留的结构痕迹。",
+    en: "Check a sample for transport conflicts and migration residue.",
+  },
+  qStreamDesc: {
+    "zh-CN": "样例：两种结束证据都缺失的截断流。",
+    en: "Sample: a truncated stream missing both terminal signals.",
+  },
+  qNormalDesc: {
+    "zh-CN": "正常结束：finish stop + [DONE] 的对照基线。",
+    en: "Normal termination: a finish stop + [DONE] baseline to compare with.",
+  },
+  copy: { "zh-CN": "复制", en: "Copy" },
+  copied: { "zh-CN": "已复制", en: "Copied" },
+  copyFailed: {
+    "zh-CN": "复制被浏览器拒绝或不可用；预览文本仍可手动选择复制。",
+    en: "The browser refused or has no clipboard access; the preview text stays selectable below.",
+  },
+  shareTitle: { "zh-CN": "分享证据", en: "Share evidence" },
+  shareNote: {
+    "zh-CN": "包含结构事实（字段存在性/类型、事件序列），不含原文/命令/URL/token；分享前请先检查预览。",
+    en: "Contains structural facts (field presence/type, event order) — never raw values, commands, URLs, or tokens. Review the preview before sharing.",
+  },
+  clearSuccess: {
+    "zh-CN": "本机会话结果已清空。",
+    en: "Local session results cleared.",
+  },
+  clearUnconfirmed: {
+    "zh-CN": "页面已清空，服务端清空未确认。你可以继续输入新内容，稍后重试清空。",
+    en: "Cleared on this page; server-side clear is unconfirmed. You can keep typing — retry the clear later.",
+  },
+  retryClear: { "zh-CN": "重试清空", en: "Retry clear" },
+  nextStepsLabel: { "zh-CN": "下一步", en: "Next step" },
+  cannotProveLabel: { "zh-CN": "不能证明", en: "Does not prove" },
+  observedLabel: { "zh-CN": "已观察", en: "Observed" },
+  meaningLabel: { "zh-CN": "含义", en: "Meaning" },
+  advanced: { "zh-CN": "高级：添加另一模块的证据（组合导出）", en: "Advanced: add the other module's evidence (combined export)" },
+  clearStateAll: { "zh-CN": "清空全部（两模块）", en: "Clear both modules" },
+  staleNotice: {
+    "zh-CN": "输入已变更，以下结果已过期。",
+    en: "Input changed; the result below is stale.",
+  },
+
 } as const;
 
 export type StringKey = keyof typeof STRINGS;

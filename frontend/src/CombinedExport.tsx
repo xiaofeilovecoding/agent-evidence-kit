@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { ExportPayload, Lang, ModuleId } from "./types";
 import { t } from "./i18n";
 import { adapter, isShowcase } from "./adapter";
@@ -10,24 +10,24 @@ interface Props {
   statuses: Record<ModuleId, ModuleStatus>;
 }
 
-/**
- * Combined export: the user explicitly opts existing, non-stale results in.
- * Stale or missing results can never be silently included; the preview
- * states exactly which modules are inside and the fixed limitations before
- * the download button appears.
- */
+/** Combined export (advanced area): the user explicitly opts existing,
+ * non-stale results in. Preview and copy/download are bound to the
+ * selected results + language + format snapshot; any related change
+ * invalidates them, and a late response is discarded. Omitted modules are
+ * never silently included. */
 export default function CombinedExport({ lang, statuses }: Props) {
   const [includeConfig, setIncludeConfig] = useState(false);
   const [includeStream, setIncludeStream] = useState(false);
-  const [format, setFormat] = useState<"json" | "md">("md");
+  const [format, setFormat] = useState<"md" | "json">("md");
+  const [error, setError] = useState<string | null>(null);
+  const [copyState, setCopyState] = useState<"copied" | "failed" | null>(null);
+  const copiedForRef = useRef<string | null>(null);
+  const requestSeqRef = useRef(0);
 
   const configReady = statuses.config.status === "ready" && statuses.config.resultId !== null;
   const streamReady = statuses.stream.status === "ready" && statuses.stream.resultId !== null;
   const nothingAvailable = !configReady && !streamReady;
 
-  // C03: the selected results, language and format form a snapshot key;
-  // the preview (and its download) is only valid while this key is
-  // unchanged. Any related change invalidates it immediately.
   const selectedItems: { module: ModuleId; resultId: string }[] = [];
   if (includeConfig && configReady) {
     selectedItems.push({ module: "config", resultId: statuses.config.resultId! });
@@ -35,51 +35,68 @@ export default function CombinedExport({ lang, statuses }: Props) {
   if (includeStream && streamReady) {
     selectedItems.push({ module: "stream", resultId: statuses.stream.resultId! });
   }
-  const snapshotKey = JSON.stringify({
-    items: selectedItems,
-    lang,
-    format,
-  });
+  const snapshotKey = JSON.stringify({ items: selectedItems, lang, format });
+  const { preview, failed, load, invalidate } = useExportPreview<ExportPayload>(snapshotKey);
 
-  const { preview, failed, getPreview, load, invalidate } = useExportPreview<
-    ExportPayload & { items: ModuleId[] }
-  >(selectedItems.length ? snapshotKey : null);
+  useEffect(() => {
+    if (copiedForRef.current !== snapshotKey) setCopyState(null);
+  }, [snapshotKey, preview]);
 
   const loadPreview = useCallback(async () => {
+    setError(null);
     const items = selectedItems;
     if (items.length === 0) return;
-    await load(async () => {
-      const payload = await adapter.exportCombined(items, lang, format);
-      return { ...payload, items: items.map((i) => i.module) };
-    });
-  }, [snapshotKey, lang, format, load]);
+    const seq = ++requestSeqRef.current;
+    try {
+      await load(() => adapter.exportCombined(items, lang, format));
+      void seq;
+    } catch {
+      if (requestSeqRef.current === seq) setError(t("networkError", lang));
+    }
+  }, [includeConfig, includeStream, configReady, streamReady, statuses, lang, format, load]);
 
-  const downloadExport = useCallback(() => {
-    const current = getPreview();
-    if (!current) return;
-    const blob = new Blob([current.content], {
-      type: current.content_type,
+  const onCopy = useCallback(async () => {
+    if (!preview) return;
+    try {
+      if (!navigator.clipboard || typeof navigator.clipboard.writeText !== "function") {
+        throw new Error("clipboard unavailable");
+      }
+      await navigator.clipboard.writeText(preview.content);
+      copiedForRef.current = snapshotKey;
+      setCopyState("copied");
+    } catch {
+      copiedForRef.current = snapshotKey;
+      setCopyState("failed");
+    }
+  }, [preview, snapshotKey]);
+
+  const onDownload = useCallback(() => {
+    if (!preview) return;
+    const blob = new Blob([preview.content], {
+      type: format === "json" ? "application/json" : "text/markdown",
     });
     const url = URL.createObjectURL(blob);
     const anchor = document.createElement("a");
     anchor.href = url;
-    anchor.download = current.filename;
+    anchor.download = preview.filename;
     anchor.click();
     URL.revokeObjectURL(url);
-  }, [getPreview]);
+  }, [preview, format]);
+
+  useEffect(() => () => invalidate(), [invalidate]);
 
   if (isShowcase) return null;
 
-  const moduleLabel = (m: ModuleId) => (m === "config" ? t("moduleConfig", lang) : t("moduleStream", lang));
+  const moduleLabel = (m: ModuleId) =>
+    m === "config" ? t("moduleConfig", lang) : t("moduleStream", lang);
 
   return (
     <section className="combined-box" aria-label={t("combinedExport", lang)}>
-      <h3>{t("combinedExport", lang)}</h3>
+      <p className="combined-note">{t("combinedPick", lang)}</p>
       {nothingAvailable ? (
         <p className="hint">{t("combinedUnavailable", lang)}</p>
       ) : (
         <>
-          <p className="combined-note">{t("combinedPick", lang)}</p>
           <label className="combined-option">
             <input
               type="checkbox"
@@ -87,14 +104,11 @@ export default function CombinedExport({ lang, statuses }: Props) {
               disabled={!configReady}
               onChange={(e) => {
                 setIncludeConfig(e.target.checked);
-                invalidate();
               }}
             />
             <span>
               {t("combinedConfig", lang)}
-              {!configReady && (
-                <span className="hint"> · {t("combinedStale", lang)}</span>
-              )}
+              {!configReady && <span className="hint"> · {t("combinedStale", lang)}</span>}
             </span>
           </label>
           <label className="combined-option">
@@ -104,22 +118,18 @@ export default function CombinedExport({ lang, statuses }: Props) {
               disabled={!streamReady}
               onChange={(e) => {
                 setIncludeStream(e.target.checked);
-                invalidate();
               }}
             />
             <span>
               {t("combinedStream", lang)}
-              {!streamReady && (
-                <span className="hint"> · {t("combinedStale", lang)}</span>
-              )}
+              {!streamReady && <span className="hint"> · {t("combinedStale", lang)}</span>}
             </span>
           </label>
           <div className="export-controls" style={{ marginTop: "8px" }}>
             <select
               value={format}
               onChange={(e) => {
-                setFormat(e.target.value as "json" | "md");
-                invalidate();
+                setFormat(e.target.value as "md" | "json");
               }}
               aria-label={t("exportPreview", lang)}
             >
@@ -134,22 +144,38 @@ export default function CombinedExport({ lang, statuses }: Props) {
               {t("exportPreview", lang)}
             </button>
           </div>
-          {failed && <p className="status-banner error">{t("networkError", lang)}</p>}
+          {error && <p className="share-error" role="alert">{error}</p>}
+          {failed && <p className="share-error" role="alert">{t("networkError", lang)}</p>}
           {preview && (
-            <div className="export-preview">
+            <div className="share-preview">
               <div className="combined-meta">
                 <strong>{t("combinedContains", lang)}:</strong>{" "}
-                {preview.items.map((m) => moduleLabel(m as ModuleId)).join(" + ")}
+                {preview.filename.includes("combined")
+                  ? selectedItems.map((i) => moduleLabel(i.module)).join(" + ")
+                  : selectedItems.map((i) => moduleLabel(i.module)).join(" + ")}
                 <ul>
                   <li>{t("scopeNote", lang)}</li>
                   <li>{t("limitsNote", lang)}</li>
                 </ul>
               </div>
               <pre data-testid="combined-export-preview">{preview.content}</pre>
-              <p className="hint">{t("exportNote", lang)}</p>
-              <button className="primary" onClick={downloadExport}>
-                {t("download", lang)}
-              </button>
+              <div className="share-actions">
+                <button
+                  className={copyState === "copied" ? "primary copied" : "primary"}
+                  onClick={() => void onCopy()}
+                  aria-live="polite"
+                >
+                  {copyState === "copied" ? t("copied", lang) : t("copy", lang)}
+                </button>
+                <button className="ghost" onClick={onDownload}>
+                  {t("download", lang)}
+                </button>
+                {copyState === "failed" && (
+                  <span className="share-error" role="alert">
+                    {t("copyFailed", lang)}
+                  </span>
+                )}
+              </div>
             </div>
           )}
         </>

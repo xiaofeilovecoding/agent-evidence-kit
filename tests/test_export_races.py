@@ -56,13 +56,19 @@ class ExportRaces(unittest.TestCase):
     def settle(self):
         self.page.evaluate("() => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)))")
 
+    def combined_box(self, module):
+        self.page.locator(
+            f".{module}-module .advanced-combined summary"
+        ).first.click()
+        return self.page.locator(f".{module}-module .combined-box")
+
     def module(self, name):
         return self.page.locator(f"main > .{name}-module")
 
     def sample(self, module, index=0):
-        self.page.locator(".module-switch button").nth(1 if module == "stream" else 0).click()
+        self.page.locator(".sidebar-nav .nav-item").nth(1 if module == "stream" else 0).click()
         view = self.module(module)
-        view.locator(".input-panel .segmented button").first.click()
+        view.locator(".input-pane .segmented button").first.click()
         with self.page.expect_response(f"**/api/{module}/demo") as response:
             view.locator(".example-card").nth(index).click()
         response.value.body()
@@ -91,9 +97,9 @@ class ExportRaces(unittest.TestCase):
         self.settle()
 
     def edit(self, module):
-        self.page.locator(".module-switch button").nth(1 if module == "stream" else 0).click()
+        self.page.locator(".sidebar-nav .nav-item").nth(1 if module == "stream" else 0).click()
         view = self.module(module)
-        view.locator(".input-panel .segmented button").nth(2).click()
+        view.locator(".input-pane .segmented button").nth(2).click()
         view.locator("textarea").fill('{"mcpServers": {}}' if module == "config" else "data: [DONE]\n\n")
         view.locator(".status-banner.stale").wait_for()
 
@@ -103,8 +109,8 @@ class ExportRaces(unittest.TestCase):
                 self.sample(module)
                 pattern = "**/api/export"
                 pending = self.defer(pattern)
-                panel = self.module(module).locator(".result-panel")
-                panel.locator(".export-controls button").click()
+                panel = self.module(module).locator(".result-pane")
+                panel.locator(".share-row button.ghost").click()
                 self.edit(module)
                 self.release(pending, pattern)
                 self.assertEqual(panel.locator('[data-testid="export-preview"]').count(), 0)
@@ -114,7 +120,7 @@ class ExportRaces(unittest.TestCase):
     def test_deferred_combined_export_cannot_restore_stale_preview(self):
         self.sample("config")
         self.sample("stream")
-        box = self.page.locator(".combined-box")
+        box = self.combined_box("config")
         box.locator('input[type="checkbox"]').nth(0).check()
         box.locator('input[type="checkbox"]').nth(1).check()
         pattern = "**/api/export/combined"
@@ -131,13 +137,13 @@ class ExportRaces(unittest.TestCase):
             for change in ("format", "language", "new_result", "clear"):
                 with self.subTest(module=module, change=change):
                     self.sample(module)
-                    panel = self.module(module).locator(".result-panel")
+                    panel = self.module(module).locator(".result-pane")
                     pattern = "**/api/export"
                     pending = self.defer(pattern)
-                    panel.locator(".export-controls button").click()
+                    panel.locator(".share-row button.ghost").click()
                     if change == "format":
-                        panel.locator(".export-controls select").select_option("md")
-                        panel.locator(".export-controls select").select_option("json")
+                        panel.locator(".share-row select").select_option("md")
+                        panel.locator(".share-row select").select_option("json")
                     elif change == "language":
                         self.page.get_by_role("button", name="English", exact=True).click()
                         self.page.get_by_role("button", name="中文", exact=True).click()
@@ -154,7 +160,7 @@ class ExportRaces(unittest.TestCase):
 
     def test_combined_selection_round_trip_revokes_pending_response(self):
         self.sample("config")
-        box = self.page.locator(".combined-box")
+        box = self.combined_box("config")
         checkbox = box.locator('input[type="checkbox"]').first
         checkbox.check()
         pattern = "**/api/export/combined"
@@ -168,7 +174,7 @@ class ExportRaces(unittest.TestCase):
     def test_unselected_module_does_not_invalidate_combined_export(self):
         self.sample("config")
         self.sample("stream")
-        box = self.page.locator(".combined-box")
+        box = self.combined_box("config")
         box.locator('input[type="checkbox"]').nth(1).check()
         pattern = "**/api/export/combined"
         pending = self.defer(pattern)

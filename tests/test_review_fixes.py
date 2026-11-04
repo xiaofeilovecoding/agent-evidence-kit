@@ -121,10 +121,11 @@ class ReviewFixJourneys(unittest.TestCase):
         self.page.goto(BASE)
         self.page.get_by_role("button", name="带env_vars的http服务残留提示").first.click()
         self.wait_view("config")
-        self.page.get_by_role("tab", name="流结束检查").click()
+        self.page.locator(".sidebar-nav .nav-item", has_text="流结束检查").click()
         self.page.get_by_role("button", name="只有finish，缺[DONE]").first.click()
         self.wait_view("stream")
-        combined = self.page.locator(".combined-box")
+        self.page.locator(".stream-module .advanced-combined summary").click()
+        combined = self.page.locator(".stream-module .combined-box")
         combined.get_by_role("checkbox").first.check()
         combined.get_by_role("checkbox").nth(1).check()
         combined.get_by_role("button", name="导出预览").click()
@@ -132,16 +133,22 @@ class ReviewFixJourneys(unittest.TestCase):
 
         # Edit the config input: the config result goes stale, so the
         # combined preview must disappear and download must be gone.
-        self.page.get_by_role("tab", name="配置检查").click()
-        self.page.get_by_role("tab", name="粘贴").click()
+        self.page.locator(".sidebar-nav .nav-item", has_text="配置检查").click()
+        self.page.locator(".config-module").get_by_role("tab", name="粘贴").click()
         self.page.locator(".config-module textarea").fill('{"mcp_servers": {}}')
         self.page.wait_for_selector(".config-module .status-banner.stale")
-        self.assertEqual(combined.locator('[data-testid="combined-export-preview"]').count(), 0)
-        self.assertEqual(combined.get_by_role("button", name="下载").count(), 0)
+        self.assertEqual(
+            self.page.locator('[data-testid="combined-export-preview"]').count(), 0
+        )
+        self.assertEqual(
+            self.page.get_by_role("button", name="下载").count(), 0
+        )
 
         # A language switch also invalidates a freshly generated preview.
         self.page.get_by_role("button", name="分析配置").click()
         self.wait_view("config")
+        self.page.locator(".config-module .advanced-combined summary").click()
+        combined = self.page.locator(".config-module .combined-box")
         combined.get_by_role("checkbox").first.check()
         combined.get_by_role("checkbox").nth(1).check()
         combined.get_by_role("button", name="导出预览").click()
@@ -181,15 +188,15 @@ class ReviewFixJourneys(unittest.TestCase):
 
     def test_c05_stale_single_export_preview_discarded(self):
         self.page.goto(BASE)
-        self.page.get_by_role("tab", name="配置检查").click()
+        self.page.locator(".sidebar-nav .nav-item", has_text="配置检查").click()
         self.page.get_by_role("button", name="带env_vars的http服务残留提示").first.click()
         self.wait_view("config")
-        panel = self.page.locator(".config-module .result-panel")
-        panel.locator(".export-controls select").select_option("md")
+        panel = self.page.locator(".config-module .result-pane")
+        panel.locator(".share-row select").select_option("md")
         panel.get_by_role("button", name="导出预览").click()
         panel.locator('[data-testid="export-preview"]').wait_for()
         # Editing the input invalidates the preview immediately.
-        self.page.get_by_role("tab", name="粘贴").click()
+        self.page.locator(".config-module").get_by_role("tab", name="粘贴").click()
         self.page.locator(".config-module textarea").fill('{"mcp_servers": {}}')
         self.page.wait_for_selector(".config-module .status-banner.stale")
         self.assertEqual(panel.locator('[data-testid="export-preview"]').count(), 0)

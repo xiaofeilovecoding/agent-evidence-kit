@@ -1,55 +1,57 @@
 import { useCallback, useEffect, useState } from "react";
-import type { Lang, ModuleId } from "./types";
+import type { Lang, ModuleId, Theme } from "./types";
 import { t } from "./i18n";
 import { adapter, isShowcase } from "./adapter";
+import { applyTheme, loadLang, loadTheme, saveLang, saveTheme } from "./prefs";
 import ConfigModule from "./ConfigModule";
 import StreamModule from "./StreamModule";
 import CombinedExport from "./CombinedExport";
+import Dialog from "./Dialog";
+import PrivacyPanel from "./PrivacyPanel";
+import EvidenceMark from "./EvidenceMark";
 
 export interface ModuleStatus {
   status: "empty" | "loading" | "ready" | "stale" | "error";
   resultId: string | null;
 }
 
-const LANG_KEY = "aek.lang";
-
-function loadLang(): Lang {
-  try {
-    const stored = localStorage.getItem(LANG_KEY);
-    if (stored === "zh-CN" || stored === "en") return stored;
-  } catch {
-    /* private mode */
-  }
-  return "zh-CN";
-}
+const ACCENTS: Record<ModuleId, string> = {
+  config: "var(--primary)",
+  stream: "var(--stream-accent)",
+};
 
 export default function App() {
   const [lang, setLang] = useState<Lang>(loadLang);
-  const [narrow, setNarrow] = useState(window.innerWidth <= 720);
+  const [theme, setTheme] = useState<Theme>(loadTheme);
   const [activeModule, setActiveModule] = useState<ModuleId>("config");
   const [statuses, setStatuses] = useState<Record<ModuleId, ModuleStatus>>({
     config: { status: "empty", resultId: null },
     stream: { status: "empty", resultId: null },
   });
-  const [clearAllBusy, setClearAllBusy] = useState(false);
+  const [privacyOpen, setPrivacyOpen] = useState(false);
+  const [helpOpen, setHelpOpen] = useState(false);
+  const [clearAllState, setClearAllState] = useState<"idle" | "clearing" | "unconfirmed">("idle");
   const [clearAllKey, setClearAllKey] = useState(0);
 
-  useEffect(() => {
-    const onResize = () => setNarrow(window.innerWidth <= 720);
-    window.addEventListener("resize", onResize);
-    return () => window.removeEventListener("resize", onResize);
-  }, []);
+  // Language: explicit preference saved; first visit followed the browser.
+  useEffect(() => saveLang(lang), [lang]);
 
+  // Theme: only `system` follows the OS; never resets inputs or requests.
   useEffect(() => {
+    applyTheme(theme);
+    saveTheme(theme);
+    if (theme !== "system") return;
     try {
-      localStorage.setItem(LANG_KEY, lang);
+      const media = window.matchMedia("(prefers-color-scheme: dark)");
+      const onChange = () => applyTheme("system");
+      media.addEventListener("change", onChange);
+      return () => media.removeEventListener("change", onChange);
     } catch {
-      /* private mode */
+      return undefined;
     }
-  }, [lang]);
+  }, [theme]);
 
-  // Stable per-module reporters (C04): identical status must not create a
-  // new state object, or the inline callbacks would re-render forever.
+  // Stable per-module reporters (no idle re-render loops).
   const reportConfigStatus = useCallback((status: ModuleStatus) => {
     setStatuses((prev) =>
       prev.config.status === status.status && prev.config.resultId === status.resultId
@@ -66,106 +68,220 @@ export default function App() {
   }, []);
 
   const doClearAll = useCallback(async () => {
-    setClearAllBusy(true);
-    try {
-      await adapter.clear("all");
-    } catch {
-      /* local-only best effort */
-    }
-    setClearAllKey((k) => k + 1); // modules listen and reset their state
+    // Revoke local state and share eligibility immediately.
+    setClearAllKey((k) => k + 1);
     setStatuses({
       config: { status: "empty", resultId: null },
       stream: { status: "empty", resultId: null },
     });
-    setClearAllBusy(false);
+    setClearAllState("clearing");
+    try {
+      await adapter.clear("all");
+      setClearAllState("idle");
+    } catch {
+      // Page is already cleared; the server-side clear is unconfirmed.
+      setClearAllState("unconfirmed");
+    }
   }, []);
 
+  const retryClearAll = useCallback(async () => {
+    setClearAllState("clearing");
+    try {
+      await adapter.clear("all");
+      setClearAllState("idle");
+    } catch {
+      setClearAllState("unconfirmed");
+    }
+  }, []);
+
+  const moduleTabs = (
+    <div className="module-tabs" role="tablist" aria-label={t("inputTab", lang)}>
+      <button
+        role="tab"
+        aria-selected={activeModule === "config"}
+        className={activeModule === "config" ? "module-tab active" : "module-tab"}
+        onClick={() => setActiveModule("config")}
+      >
+        <span className="module-dot config" aria-hidden="true" />
+        {t("moduleConfig", lang)}
+      </button>
+      <button
+        role="tab"
+        aria-selected={activeModule === "stream"}
+        className={activeModule === "stream" ? "module-tab active" : "module-tab"}
+        onClick={() => setActiveModule("stream")}
+      >
+        <span className="module-dot stream" aria-hidden="true" />
+        {t("moduleStream", lang)}
+      </button>
+    </div>
+  );
+
   return (
-    <div className="app">
-      <header className="topbar">
-        <div className="topbar-title">
+    <div className="workspace">
+      <aside className="sidebar" aria-label={t("productName", lang)}>
+        <div className="sidebar-brand">
+          <EvidenceMark accent={ACCENTS[activeModule]} size={24} />
           <span className="product-name">{t("productName", lang)}</span>
-          <span className="local-note">{t("localNote", lang)}</span>
         </div>
-        <div className="lang-switch" role="group" aria-label="language">
+        <nav className="sidebar-nav" aria-label={t("inputTab", lang)}>
           <button
-            className={lang === "zh-CN" ? "lang active" : "lang"}
-            onClick={() => setLang("zh-CN")}
-            aria-pressed={lang === "zh-CN"}
-          >
-            中文
-          </button>
-          <button
-            className={lang === "en" ? "lang active" : "lang"}
-            onClick={() => setLang("en")}
-            aria-pressed={lang === "en"}
-          >
-            English
-          </button>
-        </div>
-      </header>
-      <div className="module-switch">
-        <div className="segmented" role="tablist" aria-label={t("inputTab", lang)}>
-          <button
-            role="tab"
-            aria-selected={activeModule === "config"}
-            className={
-              activeModule === "config" ? "segment active" : "segment"
-            }
+            className={activeModule === "config" ? "nav-item active" : "nav-item"}
             onClick={() => setActiveModule("config")}
+            aria-current={activeModule === "config" ? "page" : undefined}
           >
+            <span className="module-dot config" aria-hidden="true" />
             {t("moduleConfig", lang)}
           </button>
           <button
-            role="tab"
-            aria-selected={activeModule === "stream"}
-            className={
-              activeModule === "stream"
-                ? "segment active module-stream"
-                : "segment module-stream"
-            }
+            className={activeModule === "stream" ? "nav-item active" : "nav-item"}
             onClick={() => setActiveModule("stream")}
+            aria-current={activeModule === "stream" ? "page" : undefined}
           >
+            <span className="module-dot stream" aria-hidden="true" />
             {t("moduleStream", lang)}
           </button>
+        </nav>
+        <div className="sidebar-footer">
+          <button className="nav-item" onClick={() => setPrivacyOpen(true)}>
+            <span aria-hidden="true">·</span>
+            {t("privacy", lang)}
+          </button>
+          <button className="nav-item" onClick={() => setHelpOpen(true)}>
+            <span aria-hidden="true">·</span>
+            {t("help", lang)}
+          </button>
         </div>
-      </div>
-      <main className={narrow ? "main narrow" : "main wide"}>
-        <div className={activeModule === "config" ? "config-module" : "config-module module-hidden"}>
-          <ConfigModule
-            key={`config-${clearAllKey}`}
-            lang={lang}
-            narrow={narrow}
-            visible={activeModule === "config"}
-            onStatus={reportConfigStatus}
-          />
-        </div>
-        <div className={activeModule === "stream" ? "stream-module" : "stream-module module-hidden"}>
-          <StreamModule
-            key={`stream-${clearAllKey}`}
-            lang={lang}
-            narrow={narrow}
-            visible={activeModule === "stream"}
-            onStatus={reportStreamStatus}
-          />
-        </div>
-      </main>
-      {!isShowcase && (
-        <div className="combined-export">
-          <CombinedExport
-            lang={lang}
-            statuses={statuses}
-          />
-          <div className="input-actions" style={{ justifyContent: "center" }}>
+      </aside>
+      <div className="workspace-main">
+        <header className="topbar">
+          <div className="topbar-title">
+            <span className="topbar-task">
+              {activeModule === "config" ? t("moduleConfig", lang) : t("moduleStream", lang)}
+            </span>
+            <button
+              className="local-badge"
+              onClick={() => setPrivacyOpen(true)}
+              title={t("privacyTitle", lang)}
+            >
+              {t("processedLocally", lang)}
+            </button>
+          </div>
+          <div className="topbar-actions">
+            <div className="lang-switch" role="group" aria-label="language">
+              <button
+                className={lang === "zh-CN" ? "lang active" : "lang"}
+                onClick={() => setLang("zh-CN")}
+                aria-pressed={lang === "zh-CN"}
+              >
+                中文
+              </button>
+              <button
+                className={lang === "en" ? "lang active" : "lang"}
+                onClick={() => setLang("en")}
+                aria-pressed={lang === "en"}
+              >
+                English
+              </button>
+            </div>
+            <div className="theme-switch" role="group" aria-label={t("themeLabel", lang)}>
+              <button
+                className={theme === "system" ? "lang active" : "lang"}
+                onClick={() => setTheme("system")}
+                aria-pressed={theme === "system"}
+              >
+                {t("themeSystem", lang)}
+              </button>
+              <button
+                className={theme === "light" ? "lang active" : "lang"}
+                onClick={() => setTheme("light")}
+                aria-pressed={theme === "light"}
+              >
+                {t("themeLight", lang)}
+              </button>
+              <button
+                className={theme === "dark" ? "lang active" : "lang"}
+                onClick={() => setTheme("dark")}
+                aria-pressed={theme === "dark"}
+              >
+                {t("themeDark", lang)}
+              </button>
+            </div>
+          </div>
+        </header>
+        <div className="module-tabs-wide">{moduleTabs}</div>
+        {clearAllState !== "idle" && (
+          <div
+            className={clearAllState === "unconfirmed" ? "clear-banner error" : "clear-banner"}
+            role={clearAllState === "unconfirmed" ? "alert" : "status"}
+          >
+            {clearAllState === "unconfirmed" ? (
+              <>
+                <span>{t("clearUnconfirmed", lang)}</span>
+                <button className="ghost small" onClick={() => void retryClearAll()}>
+                  {t("retryClear", lang)}
+                </button>
+              </>
+            ) : (
+              <span>{t("clearSuccess", lang)}</span>
+            )}
+          </div>
+        )}
+        <main className="content">
+          <div className={activeModule === "config" ? "config-module" : "config-module module-hidden"}>
+            <ConfigModule
+              key={`config-${clearAllKey}`}
+              lang={lang}
+              visible={activeModule === "config"}
+              onStatus={reportConfigStatus}
+              combinedSlot={
+                !isShowcase ? (
+                  <details className="advanced-combined">
+                    <summary>{t("advanced", lang)}</summary>
+                    <CombinedExport lang={lang} statuses={statuses} />
+                  </details>
+                ) : null
+              }
+            />
+          </div>
+          <div className={activeModule === "stream" ? "stream-module" : "stream-module module-hidden"}>
+            <StreamModule
+              key={`stream-${clearAllKey}`}
+              lang={lang}
+              visible={activeModule === "stream"}
+              onStatus={reportStreamStatus}
+              combinedSlot={
+                !isShowcase ? (
+                  <details className="advanced-combined">
+                    <summary>{t("advanced", lang)}</summary>
+                    <CombinedExport lang={lang} statuses={statuses} />
+                  </details>
+                ) : null
+              }
+            />
+          </div>
+        </main>
+        {!isShowcase && (
+          <div className="footer-clear">
             <button
               className="ghost"
               onClick={() => void doClearAll()}
-              disabled={clearAllBusy}
+              disabled={clearAllState === "clearing"}
             >
               {t("clearAll", lang)}
             </button>
           </div>
-        </div>
+        )}
+      </div>
+      {privacyOpen && <PrivacyPanel lang={lang} onClose={() => setPrivacyOpen(false)} />}
+      {helpOpen && (
+        <Dialog title={t("helpTitle", lang)} lang={lang} onClose={() => setHelpOpen(false)}>
+          <ol className="privacy-steps">
+            <li>{t("helpStep1", lang)}</li>
+            <li>{t("helpStep2", lang)}</li>
+            <li>{t("helpStep3", lang)}</li>
+          </ol>
+        </Dialog>
       )}
     </div>
   );
