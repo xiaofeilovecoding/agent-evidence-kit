@@ -34,6 +34,31 @@ jobs:
       - name: Run HTTP layer tests
         run: python -m unittest tests.test_web tests.test_clear_race -v
 
+  browser:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install with web extra and Playwright
+        run: pip install -e ".[web]" httpx playwright
+      - name: Install Chromium
+        run: python -m playwright install --with-deps chromium
+      - name: Build frontend (local UI + showcase)
+        run: |
+          cd frontend
+          npm ci --no-audit --no-fund
+          npm run build
+          npm run build:showcase
+      - name: Run the full suite via one discover (no module can be skipped)
+        env:
+          PYTHONUTF8: "1"
+        run: python -m unittest discover -s tests -v
+
   frontend:
     runs-on: ubuntu-latest
     defaults:

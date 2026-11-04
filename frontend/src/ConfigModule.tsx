@@ -83,6 +83,7 @@ export default function ConfigModule({
   const gated = clearState !== "idle" || globallyGated;
   const [clearNote, setClearNote] = useState<"success" | null>(null);
   const [inputRevision, setInputRevision] = useState(0);
+  // inputRevisionRef mirrors the state for synchronous ticket checks.
 
   const revisionRef = useRef(0);
   const abortRef = useRef<AbortController | null>(null);
@@ -91,6 +92,16 @@ export default function ConfigModule({
   // current ticket so a deferred FileReader.onload can never land.
   const fileTicketRef = useRef(0);
   const readerRef = useRef<FileReader | null>(null);
+  // R03: the input source and revision gate deferred file callbacks.
+  const sourceRef = useRef<"file" | "paste">("file");
+  const inputRevisionRef = useRef(0);
+  const mountedRef = useRef(true);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -143,7 +154,8 @@ export default function ConfigModule({
         : prev,
     );
     setClearNote(null);
-    setInputRevision((r) => r + 1);
+    inputRevisionRef.current += 1;
+    setInputRevision(inputRevisionRef.current);
   }, []);
 
   const applyOutcome = useCallback((outcome: AnalysisOutcome) => {
@@ -157,7 +169,8 @@ export default function ConfigModule({
     setExpanded(null);
     setSeverityFilter("all");
     setClearNote(null);
-    setInputRevision((r) => r + 1);
+    inputRevisionRef.current += 1;
+    setInputRevision(inputRevisionRef.current);
     // On narrow viewports switch to the result view (≤767 switch).
     try {
       if (window.innerWidth <= 767) setTab("result");
@@ -251,7 +264,27 @@ export default function ConfigModule({
   }, [inputTab, lang, pasteFormatChoice, pasteText, pendingBytes, pendingFormat, runAnalysis, clearState, globallyGated]);
 
   const onFiles = useCallback((files: FileList | null) => {
-    const file = files?.[0];
+    // R03: capture the file BEFORE any value reset - FileList is live and
+    // clearing the input would silently empty it.
+    const file = files?.[0] ?? null;
+    // R03: selection starts a new input identity - the previous share and
+    // pending bytes are revoked immediately, even for an invalid file.
+    fileTicketRef.current += 1;
+    if (readerRef.current) {
+      try {
+        readerRef.current.abort();
+      } catch {
+        /* ticket check still guards onload */
+      }
+      readerRef.current = null;
+    }
+    if (fileInputRef.current) fileInputRef.current.value = "";
+    setPendingBytes(null);
+    setPendingInfo(null);
+    sourceRef.current = "file";
+    inputRevisionRef.current += 1;
+    setInputRevision(inputRevisionRef.current);
+    invalidate();
     if (!file) return;
     const lower = file.name.toLowerCase();
     if (!lower.endsWith(".json") && !lower.endsWith(".toml")) {
@@ -264,11 +297,19 @@ export default function ConfigModule({
       return;
     }
     const ticket = ++fileTicketRef.current;
+    const ticketRevision = inputRevisionRef.current;
     const reader = new FileReader();
     readerRef.current = reader;
     reader.onload = () => {
-      // R03: a clear or a newer selection invalidates this read.
+      // eslint-disable-next-line no-console
+      console.log("[dbg] onload ticket=" + ticket + " cur=" + fileTicketRef.current + " src=" + sourceRef.current + " rev=" + inputRevisionRef.current + " trev=" + ticketRevision);
+      // R03: the read lands only if this is still the current selection,
+      // the user is still on the file source, no newer input/analysis
+      // happened, and the module is mounted.
+      if (!mountedRef.current) return;
       if (ticket !== fileTicketRef.current) return;
+      if (sourceRef.current !== "file") return;
+      if (inputRevisionRef.current !== ticketRevision) return;
       const bytes = new Uint8Array(reader.result as ArrayBuffer);
       setPendingBytes(bytes);
       setPendingFormat(format);
@@ -276,9 +317,14 @@ export default function ConfigModule({
       invalidate();
     };
     reader.onerror = () => {
+      if (!mountedRef.current) return;
       if (ticket !== fileTicketRef.current) return;
+      if (sourceRef.current !== "file") return;
+      if (inputRevisionRef.current !== ticketRevision) return;
       setPendingInfo(`${t("formatLabel", lang)}: .json / .toml`);
     };
+    // eslint-disable-next-line no-console
+    console.log("[dbg] read start ticket=" + ticket);
     reader.readAsArrayBuffer(file);
   }, [invalidate, lang]);
 
@@ -291,6 +337,8 @@ export default function ConfigModule({
     // R03: revoke any in-flight/deferred file read and allow re-selecting
     // the same file later.
     fileTicketRef.current += 1;
+    inputRevisionRef.current += 1;
+    setInputRevision(inputRevisionRef.current);
     if (readerRef.current) {
       try {
         readerRef.current.abort();
@@ -409,6 +457,8 @@ export default function ConfigModule({
             value={pasteText}
             placeholder={t("pastePlaceholderConfig", lang)}
             onChange={(event) => {
+              // R03: editing paste input revokes any deferred file read.
+              sourceRef.current = "paste";
               setPasteText(event.target.value);
               invalidate();
             }}
