@@ -33,12 +33,12 @@ except ImportError:
 
 from tests import helpers  # noqa: E402
 
-BASE = "http://127.0.0.1:7411"
+BASE = "http://127.0.0.1:7414"
 
 
 def _start_server(store):
     config = uvicorn.Config(create_app(store=store), host="127.0.0.1",
-                            port=7411, log_level="error", access_log=False)
+                            port=7414, log_level="error", access_log=False)
     server = uvicorn.Server(config)
     threading.Thread(target=server.run, daemon=True).start()
     for _ in range(100):

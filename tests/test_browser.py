@@ -329,6 +329,7 @@ class BrowserJourney(unittest.TestCase):
         self.view("stream").locator(".status-banner.stale").wait_for()
         self.view("stream").get_by_role("button", name="分析流").click()
         self.wait_view("stream")
+        self.view("stream").locator(".status-banner.loading").wait_for(state="detached")
         self.assertIn("输入无效", self.page.inner_text("body"))
 
     # ---- privacy canary with real response collection ----
