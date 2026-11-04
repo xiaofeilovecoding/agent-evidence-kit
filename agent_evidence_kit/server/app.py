@@ -439,14 +439,18 @@ def create_app(store: SessionStore | None = None,
             raise HttpError(422, "BAD_INPUT_FORMAT")
         if lang not in LANGUAGES:
             raise HttpError(422, "BAD_LANGUAGE")
-        body = await _read_body_limited(request)
+        # C02: capture the generation BEFORE reading the body so a clear()
+        # that arrives while the request is still streaming is carried
+        # through analysis to landing.
         with session.lock:
             if session.in_flight >= MAX_CONCURRENT_ANALYSES:
                 raise HttpError(429, "TOO_MANY_ANALYSES")
             session.in_flight += 1
+            generation = session.generation["config"]
         try:
-            return _run_config_analysis(session, body, input_format, lang,
-                                        "current", projection_limit)
+            body = await _read_body_limited(request)
+            return _run_config_analysis(session, generation, body, input_format,
+                                        lang, "current", projection_limit)
         finally:
             with session.lock:
                 session.in_flight -= 1
@@ -470,8 +474,10 @@ def create_app(store: SessionStore | None = None,
             raise HttpError(422, "BAD_LANGUAGE")
         raw, input_format = config_demo_bytes(case_id)
         assert raw is not None
-        return _run_config_analysis(session, raw, input_format, lang,
-                                    "reference", projection_limit)
+        with session.lock:
+            generation = session.generation["config"]
+        return _run_config_analysis(session, generation, raw, input_format,
+                                    lang, "reference", projection_limit)
 
     # ---- stream module endpoints ----
 
@@ -484,14 +490,16 @@ def create_app(store: SessionStore | None = None,
         _check_content_type(request, "application/octet-stream")
         if lang not in LANGUAGES:
             raise HttpError(422, "BAD_LANGUAGE")
-        body = await _read_body_limited(request)
+        # C02: capture the generation BEFORE reading the body (see above).
         with session.lock:
             if session.in_flight >= MAX_CONCURRENT_ANALYSES:
                 raise HttpError(429, "TOO_MANY_ANALYSES")
             session.in_flight += 1
+            generation = session.generation["stream"]
         try:
-            return _run_stream_analysis(session, body, lang, "current",
-                                        projection_limit)
+            body = await _read_body_limited(request)
+            return _run_stream_analysis(session, generation, body, lang,
+                                        "current", projection_limit)
         finally:
             with session.lock:
                 session.in_flight -= 1
@@ -512,8 +520,10 @@ def create_app(store: SessionStore | None = None,
             raise HttpError(404, "NO_CASE")
         if lang not in LANGUAGES:
             raise HttpError(422, "BAD_LANGUAGE")
-        return _run_stream_analysis(session, STREAM_DEMO_BYTES[case_id], lang,
-                                    "reference", projection_limit)
+        with session.lock:
+            generation = session.generation["stream"]
+        return _run_stream_analysis(session, generation, STREAM_DEMO_BYTES[case_id],
+                                    lang, "reference", projection_limit)
 
     if _STATIC_DIR.is_dir():
         app.mount("/", StaticFiles(directory=str(_STATIC_DIR), html=True), name="static")
@@ -524,10 +534,9 @@ def create_app(store: SessionStore | None = None,
 # ---- analysis runners (R05: generation-guarded landing) ----
 
 
-def _run_config_analysis(session, raw: bytes, input_format: str, language: str,
+def _run_config_analysis(session, generation: int, raw: bytes,
+                         input_format: str, language: str,
                          slot_name: str, projection_limit: int):
-    with session.lock:
-        generation = session.generation["config"]
     if len(raw) > CONFIG_MAX_FILE_BYTES:
         core: dict = {"error": "INPUT_TOO_LARGE"}
     else:
@@ -541,10 +550,8 @@ def _run_config_analysis(session, raw: bytes, input_format: str, language: str,
                         language, projection_limit)
 
 
-def _run_stream_analysis(session, raw: bytes, language: str,
+def _run_stream_analysis(session, generation: int, raw: bytes, language: str,
                          slot_name: str, projection_limit: int):
-    with session.lock:
-        generation = session.generation["stream"]
     if len(raw) > STREAM_MAX_INPUT_BYTES:
         core: dict = {"error": "INPUT_TOO_LARGE"}
     else:

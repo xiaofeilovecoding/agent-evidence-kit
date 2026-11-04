@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { Lang, ModuleId } from "./types";
 import { t } from "./i18n";
 import { adapter, isShowcase } from "./adapter";
@@ -19,33 +19,58 @@ export default function CombinedExport({ lang, statuses }: Props) {
   const [includeConfig, setIncludeConfig] = useState(false);
   const [includeStream, setIncludeStream] = useState(false);
   const [format, setFormat] = useState<"json" | "md">("md");
-  const [preview, setPreview] = useState<{ content: string; filename: string; items: string[] } | null>(null);
+  const [preview, setPreview] = useState<{
+    content: string;
+    filename: string;
+    items: string[];
+    snapshotKey: string;
+  } | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const requestSeqRef = useRef(0);
 
   const configReady = statuses.config.status === "ready" && statuses.config.resultId !== null;
   const streamReady = statuses.stream.status === "ready" && statuses.stream.resultId !== null;
   const nothingAvailable = !configReady && !streamReady;
 
+  // C03: the selected results, language and format form a snapshot key;
+  // the preview (and its download) is only valid while this key is
+  // unchanged. Any related change invalidates it immediately.
+  const selectedItems: { module: ModuleId; resultId: string }[] = [];
+  if (includeConfig && configReady) {
+    selectedItems.push({ module: "config", resultId: statuses.config.resultId! });
+  }
+  if (includeStream && streamReady) {
+    selectedItems.push({ module: "stream", resultId: statuses.stream.resultId! });
+  }
+  const snapshotKey = JSON.stringify({
+    items: selectedItems,
+    lang,
+    format,
+  });
+
+  useEffect(() => {
+    setPreview((prev) => (prev && prev.snapshotKey === snapshotKey ? prev : null));
+  }, [snapshotKey]);
+
   const loadPreview = useCallback(async () => {
     setError(null);
     setPreview(null);
-    const items: { module: ModuleId; resultId: string }[] = [];
-    if (includeConfig && configReady) {
-      items.push({ module: "config", resultId: statuses.config.resultId! });
-    }
-    if (includeStream && streamReady) {
-      items.push({ module: "stream", resultId: statuses.stream.resultId! });
-    }
+    const items = selectedItems;
     if (items.length === 0) return;
+    const seq = ++requestSeqRef.current;
+    const key = snapshotKey;
     try {
       const payload = await adapter.exportCombined(items, lang, format);
+      // A late response must not restore an invalidated preview (C03).
+      if (requestSeqRef.current !== seq) return;
       setPreview({
         content: payload.content,
         filename: payload.filename,
         items: items.map((i) => i.module),
+        snapshotKey: key,
       });
     } catch {
-      setError(t("networkError", lang));
+      if (requestSeqRef.current === seq) setError(t("networkError", lang));
     }
   }, [includeConfig, includeStream, configReady, streamReady, statuses, lang, format]);
 

@@ -81,24 +81,28 @@ export default function ConfigModule({ lang, narrow, visible, onStatus }: Props)
   useEffect(() => {
     if (result.status !== "ready" || !result.resultId) return;
     if (result.card && result.card.language === lang) return;
+    // C05: bind the re-render to this exact result; a late response must
+    // never overwrite a newer analysis result.
+    const rid = result.resultId;
     let cancelled = false;
-    adapter.rerender(result.resultId, lang).then((card) => {
-      if (!cancelled) setResult((prev) => ({ ...prev, card: card as ConfigCard }));
+    adapter.rerender(rid, lang).then((card) => {
+      if (cancelled) return;
+      setResult((prev) =>
+        prev.resultId === rid ? { ...prev, card: card as ConfigCard } : prev,
+      );
     }).catch(() => {
-      if (!cancelled) {
-        setResult((prev) => ({
-          ...prev,
-          status: "error",
-          message: t("sessionExpired", lang),
-          sessionExpired: true,
-        }));
-      }
+      if (cancelled) return;
+      setResult((prev) =>
+        prev.resultId === rid
+          ? { ...prev, status: "error", message: t("sessionExpired", lang), sessionExpired: true }
+          : prev,
+      );
     });
     return () => {
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [lang]);
+  }, [lang, result.status, result.resultId]);
 
   const invalidate = useCallback(() => {
     revisionRef.current += 1;
@@ -237,9 +241,16 @@ export default function ConfigModule({ lang, narrow, visible, onStatus }: Props)
     setTab("input");
   }, []);
 
+  const exportSeqRef = useRef(0);
   const loadExportPreview = useCallback(async () => {
     if (!result.resultId) return;
-    const payload = await adapter.export(result.resultId, lang, exportFormat);
+    // C05: a late export response must not resurrect a stale preview.
+    const seq = ++exportSeqRef.current;
+    const rid = result.resultId;
+    const reqFormat = exportFormat;
+    const reqLang = lang;
+    const payload = await adapter.export(rid, reqLang, reqFormat);
+    if (exportSeqRef.current !== seq) return;
     setExportPreview(payload.content);
     setExportName(payload.filename);
     setShowExport(true);

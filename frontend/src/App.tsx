@@ -48,8 +48,21 @@ export default function App() {
     }
   }, [lang]);
 
-  const reportStatus = useCallback((module: ModuleId, status: ModuleStatus) => {
-    setStatuses((prev) => ({ ...prev, [module]: status }));
+  // Stable per-module reporters (C04): identical status must not create a
+  // new state object, or the inline callbacks would re-render forever.
+  const reportConfigStatus = useCallback((status: ModuleStatus) => {
+    setStatuses((prev) =>
+      prev.config.status === status.status && prev.config.resultId === status.resultId
+        ? prev
+        : { ...prev, config: status },
+    );
+  }, []);
+  const reportStreamStatus = useCallback((status: ModuleStatus) => {
+    setStatuses((prev) =>
+      prev.stream.status === status.status && prev.stream.resultId === status.resultId
+        ? prev
+        : { ...prev, stream: status },
+    );
   }, []);
 
   const doClearAll = useCallback(async () => {
@@ -124,7 +137,7 @@ export default function App() {
             lang={lang}
             narrow={narrow}
             visible={activeModule === "config"}
-            onStatus={(status) => reportStatus("config", status)}
+            onStatus={reportConfigStatus}
           />
         </div>
         <div className={activeModule === "stream" ? "stream-module" : "stream-module module-hidden"}>
@@ -133,7 +146,7 @@ export default function App() {
             lang={lang}
             narrow={narrow}
             visible={activeModule === "stream"}
-            onStatus={(status) => reportStatus("stream", status)}
+            onStatus={reportStreamStatus}
           />
         </div>
       </main>

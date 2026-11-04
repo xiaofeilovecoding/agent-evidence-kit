@@ -59,12 +59,13 @@ class SSEParser:
         n = len(data)
         while i < n:
             if self._cr_held:
+                # The CR already completed the previous line; a following
+                # LF belongs to that same break (CRLF) and must be
+                # swallowed, never treated as a second, empty line (C01).
                 self._cr_held = False
                 if data[i] == 0x0A:
                     i += 1
-                    self._complete_line()
-                    continue
-                self._complete_line()
+                continue
             byte = data[i]
             if byte == 0x0A:
                 self._complete_line()
@@ -134,8 +135,9 @@ class SSEParser:
 
     def finish(self) -> None:
         if self._cr_held:
+            # A trailing CR at EOF already completed its line; it does not
+            # start a new one (C01).
             self._cr_held = False
-            self._complete_line()
         if self._pending:
             self._complete_line()
         if self._fields.get("data"):
