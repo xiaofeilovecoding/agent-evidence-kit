@@ -94,8 +94,8 @@ class R0345SourceSwitch(unittest.TestCase):
         self.nav(page, "配置检查" if module == "config" else "流结束检查")
         page.locator(f".{module}-module").get_by_role("tab", name="粘贴").click()
         page.locator(f".{module}-module textarea").fill(
-            '{"mcp_servers": {}}' if module == "config" else "data: [DONE]\n\n"
-        )
+                    '{"mcp_servers": {}}' if module == "config" else "data: [DONE]\n\n"
+                )
         page.get_by_role("button", name="分析配置" if module == "config" else "分析流").click()
         page.wait_for_selector(f'.{module}-module [data-testid="result-view"]')
 
@@ -150,8 +150,10 @@ class R0345SourceSwitch(unittest.TestCase):
                 page.wait_for_selector(f'.{module}-module [data-testid="result-view"]')
 
     def test_aba_switch_keeps_result_truthful(self):
-        """Paste result -> deferred file select -> back to Paste -> release:
-        the paste result must not be marked stale by the discarded read."""
+        """0420 identity contract: Paste result -> deferred file select ->
+        back to Paste -> release: the selection is an identity change, so
+        the old result stays stale with NO share affordances (no revival),
+        the cached text is preserved, and a real new analysis succeeds."""
         for module in ("config", "stream"):
             with self.subTest(module=module):
                 page = self._defer_page()
@@ -162,15 +164,39 @@ class R0345SourceSwitch(unittest.TestCase):
                     "tab", name="粘贴").click()
                 page.evaluate("() => window.__releaseFileReads()")
                 page.wait_for_timeout(300)
-                # No stale banner and the ready result is untouched.
+                # Truthful identity: stale, no export, no download.
                 self.assertEqual(
                     page.locator(
-                        f".{module}-module .status-banner.stale").count(), 0,
-                    "a discarded deferred read must not stale the paste result",
+                        f".{module}-module .status-banner.stale").count(), 1,
+                    "the identity change must keep the old result stale",
                 )
                 self.assertEqual(
                     page.locator(
-                        f'.{module}-module [data-testid="result-view"]').count(), 1
+                        f".{module}-module .result-pane .share-row button.ghost"
+                    ).count(),
+                    0,
+                    "no export affordance for the revoked result",
+                )
+                self.assertEqual(
+                    page.locator(
+                        f".{module}-module .result-pane"
+                    ).get_by_role("button", name="下载").count(),
+                    0,
+                    "no download affordance for the revoked result",
+                )
+                # Cached text preserved; a real new analysis still succeeds.
+                self.assertEqual(
+                    page.locator(f".{module}-module textarea").input_value(),
+                    '{"mcp_servers": {}}' if module == "config" else "data: [DONE]\n\n"
+                )
+                page.get_by_role(
+                    "button", name="分析配置" if module == "config" else "分析流"
+                ).click()
+                page.wait_for_selector(f'.{module}-module [data-testid="result-view"]')
+                self.assertEqual(
+                    page.locator(
+                        f".{module}-module .status-banner.stale").count(), 0,
+                    "the new analysis is fresh",
                 )
 
     def test_no_debug_console_output_in_production(self):

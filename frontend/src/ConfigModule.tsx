@@ -92,41 +92,53 @@ export default function ConfigModule({
   // current ticket so a deferred FileReader.onload can never land.
   const fileTicketRef = useRef(0);
   const readerRef = useRef<FileReader | null>(null);
-  // R03: the input source and revision gate deferred file callbacks.
-  const sourceRef = useRef<"file" | "paste">("file");
-  // R03-0345: the paste text the last paste-source analysis ran on; an
-  // unedited return to the paste tab revalidates that exact result.
-  const lastAnalyzedPasteRef = useRef<string | null>(null);
+  // R03/0420: the active input source is part of the input identity.
+  const sourceRef = useRef<"examples" | "file" | "paste">("examples");
   /** R03-0345: switching the input source revokes any deferred file
    * read, so a pasted/paste-tab identity can never be poisoned by it. */
+  // 0420: one shared revocation for the CURRENT input identity: supersede
+  // deferred readers, abort the in-flight analysis, and exit loading/ready
+  // into a truthful stale/empty state. Cached input text is kept; share
+  // eligibility is not restored by switching back.
+  const revokeIdentity = useCallback(() => {
+    fileTicketRef.current += 1;
+    if (readerRef.current) {
+      try {
+        readerRef.current.abort();
+      } catch {
+        /* ticket check still guards onload */
+      }
+      readerRef.current = null;
+    }
+    if (abortRef.current) abortRef.current.abort();
+    inputRevisionRef.current += 1;
+    setInputRevision(inputRevisionRef.current);
+    setResult((prev) => {
+      if (prev.status === "ready")
+        return { ...prev, status: "stale", sessionExpired: false };
+      if (prev.status === "loading")
+        return prev.card
+          ? { ...prev, status: "stale", sessionExpired: false }
+          : {
+              status: "empty",
+              resultId: null,
+              card: null,
+              message: null,
+              sessionExpired: false,
+            };
+      return prev;
+    });
+  }, []);
+
+  /** Switching to a different source is an input-identity change: the old
+   * analysis is superseded and stays stale until a real new analysis. */
   const setSource = useCallback(
-    (next: "file" | "paste") => {
+    (next: "examples" | "file" | "paste") => {
       if (sourceRef.current === next) return;
       sourceRef.current = next;
-      if (next === "paste") {
-        fileTicketRef.current += 1;
-        if (readerRef.current) {
-          try {
-            readerRef.current.abort();
-          } catch {
-            /* ticket check still guards onload */
-          }
-          readerRef.current = null;
-        }
-        // R03-0345: returning to an UNEDITED paste input revalidates the
-        // result that was analyzed for exactly this text. Any real edit
-        // keeps the stale marking.
-        setResult((prev) =>
-          prev.status === "stale" &&
-          prev.card &&
-          lastAnalyzedPasteRef.current !== null &&
-          lastAnalyzedPasteRef.current === pasteText
-            ? { ...prev, status: "ready", sessionExpired: false }
-            : prev,
-        );
-      }
+      revokeIdentity();
     },
-    [pasteText],
+    [revokeIdentity],
   );
   const inputRevisionRef = useRef(0);
   const mountedRef = useRef(true);
@@ -249,23 +261,7 @@ export default function ConfigModule({
         applyOutcome(outcome);
       } catch (error) {
         if (revision !== revisionRef.current) return;
-        if ((error as Error).name === "AbortError") {
-          // R03-0345: superseded (our own newer request took over) - the
-          // newer identity already rendered its state.
-          if (revision === revisionRef.current) return;
-          setResult((prev) =>
-            prev.card
-              ? { ...prev, status: "stale", sessionExpired: false }
-              : {
-                  status: "empty",
-                  resultId: null,
-                  card: null,
-                  message: null,
-                  sessionExpired: false,
-                },
-          );
-          return;
-        }
+        if ((error as Error).name === "AbortError") return;
         if (isSessionError(error)) {
           setResult((prev) => ({
             status: "error",
@@ -295,6 +291,18 @@ export default function ConfigModule({
   const runCase = useCallback(
     (caseId: string) => {
       if (clearState !== "idle" || globallyGated) return;
+      // 0420: running a sample makes Examples the active input source and
+      // supersedes any deferred file read.
+      sourceRef.current = "examples";
+      fileTicketRef.current += 1;
+      if (readerRef.current) {
+        try {
+          readerRef.current.abort();
+        } catch {
+          /* ticket check still guards onload */
+        }
+        readerRef.current = null;
+      }
       void runAnalysis((signal) => adapter.runDemo("config", caseId, lang).then((o) => {
         void signal;
         return o;
@@ -325,7 +333,6 @@ export default function ConfigModule({
         });
         return;
       }
-      lastAnalyzedPasteRef.current = pasteText;
       void runAnalysis((signal) => adapter.analyzeBytes("config", bytes, format, lang, signal));
       return;
     }
@@ -471,9 +478,8 @@ export default function ConfigModule({
             disabled={key !== "examples" && inputDisabled}
             onClick={() => {
               setInputTab(key);
-              // R03-0345: switching tabs switches the active input source.
-              if (key === "paste") setSource("paste");
-              else if (key === "file") setSource("file");
+              // 0420: every input tab is a real source; switching revokes.
+              setSource(key);
             }}
           >
             {t(key, lang)}

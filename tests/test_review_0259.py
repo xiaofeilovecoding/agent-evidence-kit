@@ -170,22 +170,7 @@ class R03FileBoundaries(unittest.TestCase):
         self.assertNotIn("JSON · 47 B", page.inner_text("body"))
 
     def test_oversized_selection_does_not_reuse_previous_bytes(self):
-        try:
             self._oversized_body()
-        except Exception:
-            try:
-                self.page.screenshot(
-                    path=str(
-                        Path(os.environ.get(
-                            "AEK_SCREENSHOT_DIR",
-                            str(PROJECT_ROOT / "artifacts" / "screenshots"),
-                        ))
-                        / "debug-oversized-hang.png"
-                    )
-                )
-            except Exception:
-                pass
-            raise
 
     def _oversized_body(self):
         """A valid selection followed by an oversized one must clear the
