@@ -157,3 +157,31 @@ class F01RendererIntegration(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class R07WordingAccuracy(unittest.TestCase):
+    """R07: guidance must not over-claim what a capture can prove."""
+
+    def test_done_without_finish_does_not_claim_connection_state(self):
+        for lang in ("zh-CN", "en"):
+            entry = ns.next_steps_for("DONE_WITHOUT_FINISH", lang)
+            blob = json.dumps(entry, ensure_ascii=False)
+            self.assertNotIn("连接收尾正常", blob)
+            self.assertNotIn("closed normally", blob)
+            self.assertNotIn("provider never reported", blob)
+            self.assertNotIn("不判断是provider", blob)
+
+    def test_done_without_finish_frames_capture_scope(self):
+        zh = ns.next_steps_for("DONE_WITHOUT_FINISH", "zh-CN")
+        self.assertIn("捕获", zh["observed"])
+        self.assertIn("不证明", zh["does_not_prove"])
+        en = ns.next_steps_for("DONE_WITHOUT_FINISH", "en")
+        self.assertIn("capture", en["observed"])
+        self.assertIn("does not prove", en["does_not_prove"].lower())
+
+    def test_normal_termination_scoped_to_capture(self):
+        for lang in ("zh-CN", "en"):
+            entry = ns.next_steps_for("NORMAL_TERMINATION", lang)
+            blob = json.dumps(entry, ensure_ascii=False)
+            self.assertNotIn("provider报告了", blob)
+            self.assertNotIn("provider reported", blob)

@@ -9,7 +9,7 @@ import type { AnalysisOutcome } from "./api";
 import type { ModuleStatus } from "./App";
 import EvidenceMark from "./EvidenceMark";
 import ShareBlock from "./ShareBlock";
-import { NextStepsView } from "./ConfigModule";
+import FindingGuidance from "./FindingGuidance";
 
 type Status = "empty" | "loading" | "ready" | "stale" | "error";
 
@@ -411,7 +411,6 @@ export default function StreamModule({
           <div className={`verdict-banner ${card.verdict.toLowerCase()}`}>
             {verdictLabel(card)}
           </div>
-          {card.next_steps && <NextStepsView steps={card.next_steps} lang={lang} />}
           <p className="scope-note">{t("limitsNote", lang)}</p>
           {evidenceBlock(card)}
           {card.findings.length > 0 && (
@@ -421,7 +420,9 @@ export default function StreamModule({
                   <span className={`badge ${f.severity}`}>{f.code}</span>
                   <div className="finding-detail">
                     <span className="finding-text">{f.explanation}</span>
-                    {f.next_steps && <NextStepsView steps={f.next_steps} lang={lang} />}
+                    {f.next_steps && (
+                      <FindingGuidance steps={f.next_steps} lang={lang} defaultOpen={i === 0} />
+                    )}
                   </div>
                   {f.event_index !== null && (
                     <button

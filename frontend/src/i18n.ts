@@ -184,6 +184,7 @@ const STRINGS = {
     en: "No accounts are read and no disks are scanned; only the content you paste or choose is analyzed.",
   },
   sampleTag: { "zh-CN": "合成样例", en: "Synthetic sample" },
+  guidanceLabel: { "zh-CN": "含义与下一步", en: "Meaning & next step" },
   close: { "zh-CN": "关闭", en: "Close" },
   help: { "zh-CN": "帮助", en: "Help" },
   privacy: { "zh-CN": "隐私", en: "Privacy" },

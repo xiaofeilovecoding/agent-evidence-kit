@@ -1,6 +1,6 @@
 {
   "mode": "sample-showcase",
-  "generated_with": "0.1.0",
+  "generated_with": "0.2.0",
   "cases": [
     {
       "case_id": "http-residue",
@@ -594,7 +594,7 @@
                 "explanation": "观察到正常finish且收到[DONE]：本profile下结束证据完整。这不代表答案正确或完整。",
                 "next_steps": {
                   "observed": "观察到正常finish且收到[DONE]。",
-                  "meaning": "该profile下结束证据齐全：provider报告了结束原因，应用层终止帧也到达。",
+                  "meaning": "就本捕获而言结束证据齐全：观察到正常finish，也收到[DONE]。",
                   "next_steps": "可作为“流完整走到结束”的证据粘贴给协助者；若答案本身有问题，请继续查其他证据。",
                   "does_not_prove": "不证明答案正确、完整或内容安全。"
                 }
@@ -644,7 +644,7 @@
             ],
             "next_steps": {
               "observed": "观察到正常finish且收到[DONE]。",
-              "meaning": "该profile下结束证据齐全：provider报告了结束原因，应用层终止帧也到达。",
+              "meaning": "就本捕获而言结束证据齐全：观察到正常finish，也收到[DONE]。",
               "next_steps": "可作为“流完整走到结束”的证据粘贴给协助者；若答案本身有问题，请继续查其他证据。",
               "does_not_prove": "不证明答案正确、完整或内容安全。"
             }
@@ -672,7 +672,7 @@
                 "explanation": "A normal finish was observed and [DONE] was received: terminal evidence is complete for this profile. This does not prove the answer is correct or complete.",
                 "next_steps": {
                   "observed": "A normal finish was observed and [DONE] was received.",
-                  "meaning": "Terminal evidence is complete for this profile: the provider reported a finish reason and the application-level termination frame arrived.",
+                  "meaning": "Terminal evidence is complete for this capture: a normal finish was observed and [DONE] was received.",
                   "next_steps": "Share it as evidence that the stream reached a proper end; if the answer itself is wrong, look at other evidence.",
                   "does_not_prove": "This does not prove the answer is correct, complete, or safe."
                 }
@@ -722,7 +722,7 @@
             ],
             "next_steps": {
               "observed": "A normal finish was observed and [DONE] was received.",
-              "meaning": "Terminal evidence is complete for this profile: the provider reported a finish reason and the application-level termination frame arrived.",
+              "meaning": "Terminal evidence is complete for this capture: a normal finish was observed and [DONE] was received.",
               "next_steps": "Share it as evidence that the stream reached a proper end; if the answer itself is wrong, look at other evidence.",
               "does_not_prove": "This does not prove the answer is correct, complete, or safe."
             }
@@ -878,9 +878,9 @@
                 "explanation": "收到[DONE]但没有finish_reason：连接收尾正常，但供应商未给出结束原因。",
                 "next_steps": {
                   "observed": "收到[DONE]，但捕获中未出现finish_reason。",
-                  "meaning": "连接收尾正常，但provider未给出结束原因。",
+                  "meaning": "就这段捕获而言，终止帧先于结束原因出现；工具无法看到捕获之外发生了什么。",
                   "next_steps": "检查网关/SDK是否改写或过滤了chunk结构，再抓一次对比。",
-                  "does_not_prove": "不判断是provider、网关还是SDK的责任。"
+                  "does_not_prove": "不证明连接如何关闭，也不定位provider、网关或SDK的责任。"
                 }
               }
             ],
@@ -904,12 +904,12 @@
             ],
             "next_steps": {
               "observed": "收到[DONE]，但捕获中未出现finish_reason。",
-              "meaning": "连接收尾正常，但provider未给出结束原因。",
+              "meaning": "就这段捕获而言，终止帧先于结束原因出现；工具无法看到捕获之外发生了什么。",
               "next_steps": "检查网关/SDK是否改写或过滤了chunk结构，再抓一次对比。",
-              "does_not_prove": "不判断是provider、网关还是SDK的责任。"
+              "does_not_prove": "不证明连接如何关闭，也不定位provider、网关或SDK的责任。"
             }
           },
-          "markdown": "# 流结束证据卡\n\n固定局限：本工具只观察结束证据，不推断真实时间/吞吐量，不验证供应商兼容性或认证，无法判断答案正确性。\n\n**需要复核**\n\n- finish证据: 无（正常/limit/filter见findings）\n- DONE证据: 有\n- 事件数: 2\n- usage出现: 否\n\n- [警告] DONE_WITHOUT_FINISH: 收到[DONE]但没有finish_reason：连接收尾正常，但供应商未给出结束原因。\n  - 下一步: 检查网关/SDK是否改写或过滤了chunk结构，再抓一次对比。\n  - 不能证明: 不判断是provider、网关还是SDK的责任。\n\n## 事件序列（顺序索引，非真实时间）\n\n- #0 chunk (content)\n- #1 done\n"
+          "markdown": "# 流结束证据卡\n\n固定局限：本工具只观察结束证据，不推断真实时间/吞吐量，不验证供应商兼容性或认证，无法判断答案正确性。\n\n**需要复核**\n\n- finish证据: 无（正常/limit/filter见findings）\n- DONE证据: 有\n- 事件数: 2\n- usage出现: 否\n\n- [警告] DONE_WITHOUT_FINISH: 收到[DONE]但没有finish_reason：连接收尾正常，但供应商未给出结束原因。\n  - 下一步: 检查网关/SDK是否改写或过滤了chunk结构，再抓一次对比。\n  - 不能证明: 不证明连接如何关闭，也不定位provider、网关或SDK的责任。\n\n## 事件序列（顺序索引，非真实时间）\n\n- #0 chunk (content)\n- #1 done\n"
         },
         "en": {
           "card": {
@@ -932,9 +932,9 @@
                 "explanation": "[DONE] was received but no finish_reason: the stream closed normally, yet the provider never reported why it stopped.",
                 "next_steps": {
                   "observed": "[DONE] was received, but no finish_reason appears in the capture.",
-                  "meaning": "The connection closed normally, but the provider never reported a finish reason.",
+                  "meaning": "Within this capture the termination frame arrived before any finish reason; the tool cannot see beyond the capture.",
                   "next_steps": "Check whether your gateway/SDK rewrites or filters chunk structure, then capture again to compare.",
-                  "does_not_prove": "Responsibility between provider/gateway/SDK is not judged."
+                  "does_not_prove": "This does not prove how the connection closed and does not assign responsibility to the provider, gateway, or SDK."
                 }
               }
             ],
@@ -958,12 +958,12 @@
             ],
             "next_steps": {
               "observed": "[DONE] was received, but no finish_reason appears in the capture.",
-              "meaning": "The connection closed normally, but the provider never reported a finish reason.",
+              "meaning": "Within this capture the termination frame arrived before any finish reason; the tool cannot see beyond the capture.",
               "next_steps": "Check whether your gateway/SDK rewrites or filters chunk structure, then capture again to compare.",
-              "does_not_prove": "Responsibility between provider/gateway/SDK is not judged."
+              "does_not_prove": "This does not prove how the connection closed and does not assign responsibility to the provider, gateway, or SDK."
             }
           },
-          "markdown": "# Stream End Evidence Card\n\nFixed limits: this tool observes terminal evidence only; it does not infer real timing/throughput, provider compatibility, or authentication, and cannot judge answer correctness.\n\n**Needs review**\n\n- finish evidence: none\n- [DONE] evidence: yes\n- events: 2\n- usage seen: no\n\n- [warning] DONE_WITHOUT_FINISH: [DONE] was received but no finish_reason: the stream closed normally, yet the provider never reported why it stopped.\n  - Next step: Check whether your gateway/SDK rewrites or filters chunk structure, then capture again to compare.\n  - Does not prove: Responsibility between provider/gateway/SDK is not judged.\n\n## Event sequence (order index, not real time)\n\n- #0 chunk (content)\n- #1 done\n"
+          "markdown": "# Stream End Evidence Card\n\nFixed limits: this tool observes terminal evidence only; it does not infer real timing/throughput, provider compatibility, or authentication, and cannot judge answer correctness.\n\n**Needs review**\n\n- finish evidence: none\n- [DONE] evidence: yes\n- events: 2\n- usage seen: no\n\n- [warning] DONE_WITHOUT_FINISH: [DONE] was received but no finish_reason: the stream closed normally, yet the provider never reported why it stopped.\n  - Next step: Check whether your gateway/SDK rewrites or filters chunk structure, then capture again to compare.\n  - Does not prove: This does not prove how the connection closed and does not assign responsibility to the provider, gateway, or SDK.\n\n## Event sequence (order index, not real time)\n\n- #0 chunk (content)\n- #1 done\n"
         }
       }
     },

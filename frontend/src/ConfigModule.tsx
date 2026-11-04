@@ -9,6 +9,7 @@ import type { AnalysisOutcome } from "./api";
 import type { ModuleStatus } from "./App";
 import EvidenceMark from "./EvidenceMark";
 import ShareBlock from "./ShareBlock";
+import FindingGuidance, { NextStepsInline } from "./FindingGuidance";
 
 type Status = "empty" | "loading" | "ready" | "stale" | "error";
 
@@ -584,7 +585,7 @@ function ResultCardView(props: {
         <p className="finding-code">{card.error.code}</p>
         <p>{card.error.explanation}</p>
         {card.error.next_steps && (
-          <NextStepsView steps={card.error.next_steps} lang={lang} />
+          <NextStepsInline steps={card.error.next_steps} lang={lang} />
         )}
       </div>
     );
@@ -715,17 +716,27 @@ function ServiceGroup(props: {
             ))}
           </ul>
           <ul className="finding-list">
-            {service.findings.map((finding) => (
-              <li key={finding.code} className={`finding ${finding.severity}`}>
-                <span className={`badge ${finding.severity}`}>{finding.code}</span>
-                <div className="finding-detail">
-                  <span className="finding-text">{finding.explanation}</span>
-                  {finding.next_steps && (
-                    <NextStepsView steps={finding.next_steps} lang={lang} />
-                  )}
-                </div>
-              </li>
-            ))}
+            {service.findings.map((finding, index) => {
+              const isPrimary =
+                finding.severity !== "info" &&
+                index ===
+                  service.findings.findIndex((f) => f.severity !== "info");
+              return (
+                <li key={finding.code} className={`finding ${finding.severity}`}>
+                  <span className={`badge ${finding.severity}`}>{finding.code}</span>
+                  <div className="finding-detail">
+                    <span className="finding-text">{finding.explanation}</span>
+                    {finding.next_steps && (
+                      <FindingGuidance
+                        steps={finding.next_steps}
+                        lang={lang}
+                        defaultOpen={isPrimary}
+                      />
+                    )}
+                  </div>
+                </li>
+              );
+            })}
           </ul>
         </div>
       )}

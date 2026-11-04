@@ -15,7 +15,7 @@
 
 ![流证据与正常样例对照](docs/screenshots/zh-stream-dark.png)
 
-全部在同一个工作区内完成（浅色/深色/跟随系统主题，中文或 English）：点击任一示例即可体验真实诊断链——无 Key、无网络。
+全部在同一个工作区内完成（浅色/深色/跟随系统主题，中文或 English）：点击任一示例即可体验真实诊断链——无需 API Key、不访问外部网络。
 
 ## 快速上手（从源码检出运行）
 
@@ -24,13 +24,15 @@ git clone https://github.com/xiaofeilovecoding/agent-evidence-kit
 cd agent-evidence-kit
 
 # Windows (PowerShell)
-py -3 --version          # 需要 Python 3.11+
-pip install -e ".[web]"
+py -3 -m venv .venv                       # 需要 Python 3.11+
+.\.venv\Scripts\Activate.ps1
+python -m pip install -e ".[web]"
 python -m agent_evidence_kit web
 
 # macOS / Linux
-python3 --version        # 需要 Python 3.11+
-pip install -e ".[web]"
+python3 -m venv .venv                     # 需要 Python 3.11+
+. .venv/bin/activate
+python -m pip install -e ".[web]"
 python -m agent_evidence_kit web
 ```
 
@@ -68,7 +70,7 @@ python -m agent_evidence_kit stream demo --case finish-only
 
 ## 不适用的场景
 
-- 对运行中的 agent 做实时调试：本工具从不连接任何服务、发送请求，也不读取你提供的文件之外的日志。
+- 对运行中的 agent 做实时调试：本工具不发起任何对外连接、不发送请求，也不读取你提供的文件之外的日志。
 - 判断答案是否正确，或供应商兼容性。
 - 自动修复：发现附带人工下一步说明；你的配置绝不会被修改。
 

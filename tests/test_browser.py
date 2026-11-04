@@ -202,19 +202,11 @@ class BrowserJourney(unittest.TestCase):
         self.page.locator(".sidebar-nav .nav-item", has_text="配置检查").click()
         self.view("config").get_by_role("tab", name="粘贴").click()
 
-        # A TOML document with a [table] header starts with "[" and the
-        # auto-detector reports JSON; analyzing as JSON gives a stable input
-        # error, and the user can correct the format explicitly (R02).
+        # R05: a TOML [table] header auto-detects as TOML (bracket
+        # content is a table name, not a JSON value token) and analyzes
+        # cleanly without a manual override.
         toml = '[mcp_servers.demo]\ncommand = "python"\n'
         self.view("config").locator("textarea").fill(toml)
-        indicator = self.view("config").locator(".format-row").inner_text()
-        self.assertIn("JSON", indicator)
-        self.view("config").get_by_role("button", name="分析配置").click()
-        self.view("config").locator(".result-error").wait_for()
-        self.assertIn("INVALID_SYNTAX", self.page.inner_text("body"))
-
-        # Correct the format to TOML; the same text now analyzes cleanly.
-        self.view("config").locator("#config-format-select").select_option("toml")
         self.assertIn("TOML", self.view("config").locator(".format-row").inner_text())
         self.view("config").get_by_role("button", name="分析配置").click()
         self.wait_view("config")

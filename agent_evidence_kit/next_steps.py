@@ -261,8 +261,8 @@ NEXT_STEPS: dict[str, dict[str, dict[str, str]]] = {
             "en": "A normal finish was observed and [DONE] was received.",
         },
         "meaning": {
-            "zh-CN": "该profile下结束证据齐全：provider报告了结束原因，应用层终止帧也到达。",
-            "en": "Terminal evidence is complete for this profile: the provider reported a finish reason and the application-level termination frame arrived.",
+            "zh-CN": "就本捕获而言结束证据齐全：观察到正常finish，也收到[DONE]。",
+            "en": "Terminal evidence is complete for this capture: a normal finish was observed and [DONE] was received.",
         },
         "next_steps": {
             "zh-CN": "可作为“流完整走到结束”的证据粘贴给协助者；若答案本身有问题，请继续查其他证据。",
@@ -297,16 +297,16 @@ NEXT_STEPS: dict[str, dict[str, dict[str, str]]] = {
             "en": "[DONE] was received, but no finish_reason appears in the capture.",
         },
         "meaning": {
-            "zh-CN": "连接收尾正常，但provider未给出结束原因。",
-            "en": "The connection closed normally, but the provider never reported a finish reason.",
+            "zh-CN": "就这段捕获而言，终止帧先于结束原因出现；工具无法看到捕获之外发生了什么。",
+            "en": "Within this capture the termination frame arrived before any finish reason; the tool cannot see beyond the capture.",
         },
         "next_steps": {
             "zh-CN": "检查网关/SDK是否改写或过滤了chunk结构，再抓一次对比。",
             "en": "Check whether your gateway/SDK rewrites or filters chunk structure, then capture again to compare.",
         },
         "does_not_prove": {
-            "zh-CN": "不判断是provider、网关还是SDK的责任。",
-            "en": "Responsibility between provider/gateway/SDK is not judged.",
+            "zh-CN": "不证明连接如何关闭，也不定位provider、网关或SDK的责任。",
+            "en": "This does not prove how the connection closed and does not assign responsibility to the provider, gateway, or SDK.",
         },
     },
     "NO_TERMINAL_EVIDENCE": {

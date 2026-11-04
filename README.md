@@ -28,7 +28,8 @@ Two bounded checkers in one local tool:
 ![Stream evidence with normal-sample comparison](docs/screenshots/en-stream-dark.png)
 
 Everything runs in this workspace (light/dark/system theme, English or
-中文): click a sample to try the real pipeline — no key, no network.
+中文): click a sample to try the real pipeline — no API key and no
+access to external networks.
 
 ## Quick start (from a source checkout)
 
@@ -37,13 +38,15 @@ git clone https://github.com/xiaofeilovecoding/agent-evidence-kit
 cd agent-evidence-kit
 
 # Windows (PowerShell)
-py -3 --version          # needs Python 3.11+
-pip install -e ".[web]"
+py -3 -m venv .venv                       # needs Python 3.11+
+.\.venv\Scripts\Activate.ps1
+python -m pip install -e ".[web]"
 python -m agent_evidence_kit web
 
 # macOS / Linux
-python3 --version        # needs Python 3.11+
-pip install -e ".[web]"
+python3 -m venv .venv                     # needs Python 3.11+
+. .venv/bin/activate
+python -m pip install -e ".[web]"
 python -m agent_evidence_kit web
 ```
 
@@ -105,8 +108,9 @@ the exact bytes of the copy/download.
 
 ## Not a fit for
 
-- Runtime debugging of a live agent: this tool never connects to
-  anything, sends requests, or reads files beyond the one you give it.
+- Runtime debugging of a live agent: this tool makes no outbound
+  connections and sends no requests, and it reads no files beyond the
+  one you give it.
 - Judging whether an answer is correct, or provider compatibility.
 - Automatic fixes: findings come with human next-steps; your config is
   never modified.
