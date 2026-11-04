@@ -84,16 +84,26 @@ class ReviewFixJourneys(unittest.TestCase):
     # ---- C04 ----
     def test_c04_idle_page_does_not_render_loop(self):
         self.page.add_init_script("""window.__commits = 0;
+          window.__lastCommit = performance.now();
           window.__REACT_DEVTOOLS_GLOBAL_HOOK__ = {
             supportsFiber: true, renderers: new Map(),
             inject(r) { this.renderers.set(1, r); return 1; },
-            onCommitFiberRoot() { window.__commits++; },
+            onCommitFiberRoot() {
+              window.__commits++;
+              window.__lastCommit = performance.now();
+            },
             onCommitFiberUnmount() {}
           };""")
         self.page.goto(BASE)
 
         def assert_settled():
             self.page.wait_for_load_state("networkidle")
+            # Network idleness does not mean concurrent React updates have
+            # committed yet. Wait for actual commit quiescence, bounded so
+            # a continuous render feedback loop still fails this assertion.
+            self.page.wait_for_function(
+                "() => performance.now() - window.__lastCommit >= 300", timeout=5000,
+            )
             first = self.page.evaluate("window.__commits")
             self.assertGreater(first, 0, "React commit counter was not installed")
             self.page.wait_for_timeout(200)
