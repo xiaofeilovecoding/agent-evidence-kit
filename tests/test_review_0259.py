@@ -18,11 +18,16 @@ sys.path.insert(0, str(PROJECT_ROOT / "tests"))
 
 from test_public_ready import _start_server  # noqa: E402
 
-import uvicorn  # noqa: E402,F401
-from playwright.sync_api import sync_playwright  # noqa: E402
+try:  # web/browser deps required only for these journeys
+    import uvicorn  # noqa: E402,F401
+    from playwright.sync_api import sync_playwright  # noqa: E402
 
-from agent_evidence_kit.server.app import create_app  # noqa: E402
-from agent_evidence_kit.server.sessions import SessionStore  # noqa: E402
+    from agent_evidence_kit.server.app import create_app  # noqa: E402
+    from agent_evidence_kit.server.sessions import SessionStore  # noqa: E402
+
+    AVAILABLE = True
+except ImportError:
+    AVAILABLE = False
 
 FILE_READER_DEFER = """
   const OriginalReader = window.FileReader;
@@ -46,6 +51,7 @@ FILE_READER_DEFER = """
 """
 
 
+@unittest.skipUnless(AVAILABLE, "web and playwright dependencies required")
 class R03FileBoundaries(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
