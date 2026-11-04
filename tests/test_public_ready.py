@@ -12,6 +12,7 @@ Real browser journeys with independent expectations:
 """
 from __future__ import annotations
 
+import os
 import sys
 import threading
 import time
@@ -423,3 +424,97 @@ class ThemeAndUsability(unittest.TestCase):
         )
         stored = page.evaluate("() => localStorage.getItem('aek.theme')")
         self.assertEqual(stored, "dark")
+
+
+@unittest.skipUnless(AVAILABLE, "web and playwright dependencies required")
+class Zoom200Usability(unittest.TestCase):
+    """Q01: 200% zoom readability. Two emulations:
+    - 390x844 @ deviceScaleFactor=2 (2x pixel density zoom on a phone
+      viewport);
+    - 720x450 CSS viewport (= a 1440x900 screen at 200% browser zoom).
+    Empty state, a real result, and the privacy panel must be readable and
+    operable with no horizontal overflow."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.store = SessionStore()
+        cls.server = _start_server(cls.store, 7418)
+        cls.pw = sync_playwright().start()
+        cls.browser = cls.pw.chromium.launch()
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.browser.close()
+        cls.pw.stop()
+        cls.server.should_exit = True
+
+    def setUp(self):
+        self.store._sessions.clear()
+        self.base = "http://127.0.0.1:7418"
+        self.out = Path(
+            os.environ.get(
+                "AEK_SCREENSHOT_DIR",
+                PROJECT_ROOT / "artifacts" / "screenshots",
+            )
+        )
+        self.out.mkdir(parents=True, exist_ok=True)
+
+    def tearDown(self):
+        self.context.close()
+
+    def _overflow(self, page):
+        return page.evaluate(
+            "document.documentElement.scrollWidth - document.documentElement.clientWidth"
+        )
+
+    def _zoom_case(self, viewport, dsf, tag):
+        self.context = self.browser.new_context(
+            viewport=viewport,
+            device_scale_factor=dsf,
+            locale="zh-CN",
+        )
+        page = self.context.new_page()
+        page.set_default_timeout(8000)
+        page.add_init_script(
+            "localStorage.setItem('aek.lang','zh-CN');"
+            "localStorage.setItem('aek.theme','light');"
+        )
+        page.goto(self.base)
+        self.assertLessEqual(self._overflow(page), 1, f"{tag}: empty state overflows")
+        page.screenshot(path=str(self.out / f"zoom200-{tag}-empty.png"), full_page=True)
+
+        # Real result with the worst-case detail expanded.
+        page.locator(".config-module .example-list .example-card").first.click()
+        page.wait_for_selector('.config-module [data-testid="result-view"]')
+        page.get_by_role("button", name="server-1").click()
+        page.wait_for_selector(".config-module .service-body")
+        self.assertLessEqual(self._overflow(page), 1, f"{tag}: result overflows")
+        page.screenshot(path=str(self.out / f"zoom200-{tag}-result.png"), full_page=True)
+
+        # Privacy panel: readable, operable, closable.
+        page.locator(".local-badge").click()
+        page.wait_for_selector(".dialog-panel")
+        self.assertLessEqual(self._overflow(page), 1, f"{tag}: privacy panel overflows")
+        panel_text = page.locator(".dialog-panel").inner_text()
+        self.assertIn("本机处理", panel_text)
+        page.screenshot(path=str(self.out / f"zoom200-{tag}-privacy.png"), full_page=True)
+        page.keyboard.press("Escape")
+        page.wait_for_selector(".dialog-panel", state="detached")
+
+        # The page remains operable after closing: switch back to the
+        # input view (narrow analysis auto-switches to result) and rerun.
+        page.locator(".config-module .view-switch").get_by_role(
+            "button", name="输入", exact=True).click()
+        page.locator(".config-module .example-list .example-card").first.click()
+        page.wait_for_selector('.config-module [data-testid="result-view"]')
+
+    def test_zoom200_phone_2x_density(self):
+        self._zoom_case({"width": 390, "height": 844}, 2, "390-2x")
+
+    def test_zoom200_desktop_half_viewport(self):
+        # 1440x900 at 200% browser zoom = 720x450 CSS pixels.
+        self._zoom_case({"width": 720, "height": 450}, 1, "720-half")
+
+
+if __name__ == "__main__":
+    unittest.main()
