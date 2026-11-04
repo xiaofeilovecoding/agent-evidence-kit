@@ -45,7 +45,9 @@ class ExportRaces(unittest.TestCase):
         cls.thread.join(5)
 
     def setUp(self):
-        self.context = self.browser.new_context(viewport={"width": 1440, "height": 960})
+        self.context = self.browser.new_context(
+            viewport={"width": 1440, "height": 960}, locale="zh-CN"
+        )
         self.page = self.context.new_page()
         self.page.set_default_timeout(5000)
         self.page.goto(self.base)

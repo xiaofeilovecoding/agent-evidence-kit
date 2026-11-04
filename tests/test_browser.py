@@ -95,7 +95,9 @@ class BrowserJourney(unittest.TestCase):
     def setUp(self):
         # Drop sessions from previous tests: the server enforces MAX_SESSIONS.
         self.store._sessions.clear()
-        self.context = self.browser.new_context(viewport={"width": 1440, "height": 960})
+        self.context = self.browser.new_context(
+            viewport={"width": 1440, "height": 960}, locale="zh-CN"
+        )
         self.page = self.context.new_page()
         self.console_errors: list[str] = []
         self.page.on(
@@ -399,7 +401,9 @@ class BrowserJourney(unittest.TestCase):
 
     # ---- narrow layout (R06) ----
     def test_narrow_layout_390_expanded_no_overflow(self):
-        context = self.browser.new_context(viewport={"width": 390, "height": 844})
+        context = self.browser.new_context(
+            viewport={"width": 390, "height": 844}, locale="zh-CN"
+        )
         page = context.new_page()
         page.goto(BASE)
         page.get_by_role("tab", name="配置检查").click()
@@ -573,7 +577,9 @@ class BrowserJourney(unittest.TestCase):
         self.view("stream").locator(".verdict-banner.needs_review").wait_for()
         self.page.screenshot(path=str(shots / "desktop-en-stream.png"), full_page=True)
 
-        context = self.browser.new_context(viewport={"width": 390, "height": 844})
+        context = self.browser.new_context(
+            viewport={"width": 390, "height": 844}, locale="zh-CN"
+        )
         narrow = context.new_page()
         narrow.goto(BASE)
         narrow.get_by_role("tab", name="配置检查").click()

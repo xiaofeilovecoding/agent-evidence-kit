@@ -72,7 +72,9 @@ class ReviewFixJourneys(unittest.TestCase):
 
     def setUp(self):
         self.store._sessions.clear()
-        self.context = self.browser.new_context(viewport={"width": 1440, "height": 960})
+        self.context = self.browser.new_context(
+            viewport={"width": 1440, "height": 960}, locale="zh-CN"
+        )
         self.page = self.context.new_page()
 
     def tearDown(self):

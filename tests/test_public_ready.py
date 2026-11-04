@@ -80,10 +80,10 @@ class PublicReadyJourneys(unittest.TestCase):
     def tearDown(self):
         self.context.close()
 
-    def new_page(self, locale: str | None = None, clipboard: bool = False):
-        kwargs = {"viewport": {"width": 1440, "height": 960}}
-        if locale:
-            kwargs["locale"] = locale
+    def new_page(self, locale: str = "zh-CN", clipboard: bool = False):
+        # Journeys with Chinese locators have an explicit language contract;
+        # first-visit detection tests supply their own browser locale.
+        kwargs = {"viewport": {"width": 1440, "height": 960}, "locale": locale}
         self.context = self.browser.new_context(**kwargs)
         if clipboard:
             self.context.grant_permissions(["clipboard-read", "clipboard-write"],
@@ -135,7 +135,9 @@ class PublicReadyJourneys(unittest.TestCase):
         self.wait_view(page_a, "config")
 
         # A separate browser context is a separate local session.
-        context_b = self.browser.new_context(viewport={"width": 1440, "height": 960})
+        context_b = self.browser.new_context(
+            viewport={"width": 1440, "height": 960}, locale="zh-CN"
+        )
         self.contexts_to_close = getattr(self, "contexts_to_close", [])
         self.contexts_to_close.append(context_b)
         page_b = context_b.new_page()
@@ -220,7 +222,8 @@ class PublicReadyJourneys(unittest.TestCase):
         # current snapshot only.
         panel.locator(".share-row select").select_option("md")
         page.wait_for_selector('.config-module .share-preview', state="detached")
-        self.assertEqual(md_preview in page.inner_text("body") and False, False)
+        self.assertEqual(panel.locator('[data-testid="export-preview"]').count(), 0)
+        self.assertEqual(panel.locator(".share-actions").count(), 0)
         panel.get_by_role("button", name="导出预览").click()
         page.wait_for_selector('[data-testid="export-preview"]')
         self.assertEqual(
@@ -242,6 +245,19 @@ class PublicReadyJourneys(unittest.TestCase):
         self.assertIn("Config check", page_zh.inner_text("body"))
         stored = page_zh.evaluate("() => localStorage.getItem('aek.lang')")
         self.assertEqual(stored, "en")
+
+    def test_non_chinese_locale_falls_back_to_english(self):
+        page = self.new_page(locale="fr-FR")
+        self.assertIn("Config check", page.locator(".topbar").inner_text())
+        self.assertIn("Processed locally", page.locator(".local-badge").inner_text())
+
+    def test_explicit_chinese_preference_overrides_english_browser(self):
+        page = self.new_page(locale="en-US")
+        self.assertIn("Config check", page.locator(".topbar").inner_text())
+        page.get_by_role("button", name="中文", exact=True).click()
+        page.reload()
+        self.assertIn("配置检查", page.locator(".topbar").inner_text())
+        self.assertEqual(page.evaluate("() => localStorage.getItem('aek.lang')"), "zh-CN")
 
     # ---- S01/Q01: privacy panel and dialog focus ----
     def test_privacy_panel_dialog_focus_and_escape(self):
@@ -350,7 +366,9 @@ class ThemeAndUsability(unittest.TestCase):
     def setUp(self):
         self.store._sessions.clear()
         self.base = "http://127.0.0.1:7417"
-        self.context = self.browser.new_context(viewport={"width": 1440, "height": 960})
+        self.context = self.browser.new_context(
+            viewport={"width": 1440, "height": 960}, locale="zh-CN"
+        )
         self.page = self.context.new_page()
         self.page.set_default_timeout(8000)
         self.page.goto(self.base)
@@ -365,7 +383,7 @@ class ThemeAndUsability(unittest.TestCase):
             page.evaluate("() => document.documentElement.dataset.theme"), "dark"
         )
         samples = page.evaluate(
-            """() => {
+            r"""() => {
               function luminance(rgb) {
                 const [r, g, b] = rgb.match(/\d+/g).map(Number).map(v => {
                   v /= 255; return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4);
