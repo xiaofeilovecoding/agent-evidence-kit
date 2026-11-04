@@ -73,6 +73,40 @@ export default function StreamModule({
   const readerRef = useRef<FileReader | null>(null);
   // R03: the input source and revision gate deferred file callbacks.
   const sourceRef = useRef<"file" | "paste">("file");
+  // R03-0345: the paste text the last paste-source analysis ran on; an
+  // unedited return to the paste tab revalidates that exact result.
+  const lastAnalyzedPasteRef = useRef<string | null>(null);
+  /** R03-0345: switching the input source revokes any deferred file
+   * read, so a pasted/paste-tab identity can never be poisoned by it. */
+  const setSource = useCallback(
+    (next: "file" | "paste") => {
+      if (sourceRef.current === next) return;
+      sourceRef.current = next;
+      if (next === "paste") {
+        fileTicketRef.current += 1;
+        if (readerRef.current) {
+          try {
+            readerRef.current.abort();
+          } catch {
+            /* ticket check still guards onload */
+          }
+          readerRef.current = null;
+        }
+        // R03-0345: returning to an UNEDITED paste input revalidates the
+        // result that was analyzed for exactly this text. Any real edit
+        // keeps the stale marking.
+        setResult((prev) =>
+          prev.status === "stale" &&
+          prev.card &&
+          lastAnalyzedPasteRef.current !== null &&
+          lastAnalyzedPasteRef.current === pasteText
+            ? { ...prev, status: "ready", sessionExpired: false }
+            : prev,
+        );
+      }
+    },
+    [pasteText],
+  );
   const inputRevisionRef = useRef(0);
   const mountedRef = useRef(true);
   useEffect(() => {
@@ -132,9 +166,22 @@ export default function StreamModule({
   const invalidate = useCallback(() => {
     revisionRef.current += 1;
     if (abortRef.current) abortRef.current.abort();
-    setResult((prev) =>
-      prev.status === "ready" ? { ...prev, status: "stale", sessionExpired: false } : prev,
-    );
+    setResult((prev) => {
+      // R03-0345: an invalidated in-flight analysis must exit loading.
+      if (prev.status === "ready")
+        return { ...prev, status: "stale", sessionExpired: false };
+      if (prev.status === "loading")
+        return prev.card
+          ? { ...prev, status: "stale", sessionExpired: false }
+          : {
+              status: "empty",
+              resultId: null,
+              card: null,
+              message: null,
+              sessionExpired: false,
+            };
+      return prev;
+    });
     setClearNote(null);
     inputRevisionRef.current += 1;
     setInputRevision(inputRevisionRef.current);
@@ -167,6 +214,16 @@ export default function StreamModule({
     async (promise: (signal: AbortSignal) => Promise<AnalysisOutcome>) => {
       // R02: a pending/unconfirmed clear gates new analyses too.
       if (clearState !== "idle" || globallyGated) return;
+      // R03-0345: a new analysis supersedes any deferred file read.
+      fileTicketRef.current += 1;
+      if (readerRef.current) {
+        try {
+          readerRef.current.abort();
+        } catch {
+          /* ticket check still guards onload */
+        }
+        readerRef.current = null;
+      }
       const revision = ++revisionRef.current;
       if (abortRef.current) abortRef.current.abort();
       const controller = new AbortController();
@@ -178,7 +235,23 @@ export default function StreamModule({
         applyOutcome(outcome);
       } catch (error) {
         if (revision !== revisionRef.current) return;
-        if ((error as Error).name === "AbortError") return;
+        if ((error as Error).name === "AbortError") {
+          // R03-0345: superseded (our own newer request took over) - the
+          // newer identity already rendered its state.
+          if (revision === revisionRef.current) return;
+          setResult((prev) =>
+            prev.card
+              ? { ...prev, status: "stale", sessionExpired: false }
+              : {
+                  status: "empty",
+                  resultId: null,
+                  card: null,
+                  message: null,
+                  sessionExpired: false,
+                },
+          );
+          return;
+        }
         if (isSessionError(error)) {
           setResult((prev) => ({
             status: "error",
@@ -235,6 +308,7 @@ export default function StreamModule({
         });
         return;
       }
+      lastAnalyzedPasteRef.current = pasteText;
       void runAnalysis((signal) => adapter.analyzeBytes("stream", bytes, null, lang, signal));
       return;
     }
@@ -612,7 +686,12 @@ export default function StreamModule({
             aria-selected={inputTab === key}
             className={inputTab === key ? "segment active" : "segment"}
             disabled={key !== "examples" && isShowcase}
-            onClick={() => setInputTab(key)}
+            onClick={() => {
+              setInputTab(key);
+              // R03-0345: switching tabs switches the active input source.
+              if (key === "paste") setSource("paste");
+              else if (key === "file") setSource("file");
+            }}
           >
             {t(key, lang)}
           </button>
