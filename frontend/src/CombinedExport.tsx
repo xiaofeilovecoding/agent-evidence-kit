@@ -22,6 +22,8 @@ export default function CombinedExport({ lang, statuses }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [copyState, setCopyState] = useState<"copied" | "failed" | null>(null);
   const copiedForRef = useRef<string | null>(null);
+  // R04: copy feedback carries a request generation.
+  const copySeqRef = useRef(0);
   const requestSeqRef = useRef(0);
 
   const configReady = statuses.config.status === "ready" && statuses.config.resultId !== null;
@@ -36,7 +38,8 @@ export default function CombinedExport({ lang, statuses }: Props) {
     selectedItems.push({ module: "stream", resultId: statuses.stream.resultId! });
   }
   const snapshotKey = JSON.stringify({ items: selectedItems, lang, format });
-  const { preview, failed, load, invalidate } = useExportPreview<ExportPayload>(snapshotKey);
+  const { preview, failed, load, invalidate, getPreview } =
+    useExportPreview<ExportPayload>(snapshotKey);
 
   useEffect(() => {
     if (copiedForRef.current !== snapshotKey) setCopyState(null);
@@ -57,18 +60,23 @@ export default function CombinedExport({ lang, statuses }: Props) {
 
   const onCopy = useCallback(async () => {
     if (!preview) return;
+    const seq = ++copySeqRef.current;
+    const snapshot = preview;
     try {
       if (!navigator.clipboard || typeof navigator.clipboard.writeText !== "function") {
         throw new Error("clipboard unavailable");
       }
-      await navigator.clipboard.writeText(preview.content);
+      await navigator.clipboard.writeText(snapshot.content);
+      // R04: discard feedback when the snapshot changed meanwhile.
+      if (copySeqRef.current !== seq || getPreview() !== snapshot) return;
       copiedForRef.current = snapshotKey;
       setCopyState("copied");
     } catch {
+      if (copySeqRef.current !== seq || getPreview() !== snapshot) return;
       copiedForRef.current = snapshotKey;
       setCopyState("failed");
     }
-  }, [preview, snapshotKey]);
+  }, [preview, snapshotKey, getPreview]);
 
   const onDownload = useCallback(() => {
     if (!preview) return;

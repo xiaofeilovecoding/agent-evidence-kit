@@ -27,6 +27,8 @@ interface Props {
   combinedSlot?: ReactNode;
   scenario?: string | null;
   onScenarioConsumed?: () => void;
+  /** R02: a global clear is pending/unconfirmed - gate this module too. */
+  globallyGated?: boolean;
 }
 
 function formatBytes(size: number): string {
@@ -35,8 +37,21 @@ function formatBytes(size: number): string {
 }
 
 function guessFormat(text: string): "json" | "toml" {
-  const trimmed = text.trim();
-  if (trimmed.startsWith("{") || trimmed.startsWith("[")) return "json";
+  // R05: heuristic only — the server parser stays authoritative. Handle
+  // the representative shapes: BOM, leading comment, JSON object/array,
+  // TOML table headers and arrays of tables.
+  let t = text.trim();
+  if (t.charCodeAt(0) === 0xfeff) t = t.slice(1).trimStart();
+  if (t.startsWith("#")) return "toml";
+  if (t.startsWith("{")) return "json";
+  if (t.startsWith("[[")) return "toml";
+  if (t.startsWith("[")) {
+    const after = t.slice(1).trimStart();
+    // JSON array if the first value token is an object, string, number,
+    // boolean, null, or the array is closed immediately.
+    if (/^(\{|"|'|[-\d]|true|false|null|\])/.test(after)) return "json";
+    return "toml";
+  }
   return "toml";
 }
 
@@ -47,6 +62,7 @@ export default function ConfigModule({
   combinedSlot,
   scenario,
   onScenarioConsumed,
+  globallyGated = false,
 }: Props) {
   const [cases, setCases] = useState<CatalogCase[]>([]);
   const [tab, setTab] = useState<"input" | "result">("input");
@@ -62,12 +78,18 @@ export default function ConfigModule({
   const [severityFilter, setSeverityFilter] = useState<"all" | "warning" | "error">("all");
   const [expanded, setExpanded] = useState<string | null>(null);
   const [clearState, setClearState] = useState<"idle" | "clearing" | "unconfirmed">("idle");
+  // R02: pending/unconfirmed clear gates analysis and share actions.
+  const gated = clearState !== "idle" || globallyGated;
   const [clearNote, setClearNote] = useState<"success" | null>(null);
   const [inputRevision, setInputRevision] = useState(0);
 
   const revisionRef = useRef(0);
   const abortRef = useRef<AbortController | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  // R03: every file selection gets a ticket; clear() invalidates the
+  // current ticket so a deferred FileReader.onload can never land.
+  const fileTicketRef = useRef(0);
+  const readerRef = useRef<FileReader | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -145,6 +167,8 @@ export default function ConfigModule({
 
   const runAnalysis = useCallback(
     async (promise: (signal: AbortSignal) => Promise<AnalysisOutcome>) => {
+      // R02: a pending/unconfirmed clear gates new analyses too.
+      if (clearState !== "idle" || globallyGated) return;
       const revision = ++revisionRef.current;
       if (abortRef.current) abortRef.current.abort();
       const controller = new AbortController();
@@ -180,17 +204,18 @@ export default function ConfigModule({
         }));
       }
     },
-    [applyOutcome, lang],
+    [applyOutcome, lang, clearState, globallyGated],
   );
 
   const runCase = useCallback(
     (caseId: string) => {
+      if (clearState !== "idle" || globallyGated) return;
       void runAnalysis((signal) => adapter.runDemo("config", caseId, lang).then((o) => {
         void signal;
         return o;
       }));
     },
-    [lang, runAnalysis],
+    [lang, runAnalysis, clearState, globallyGated],
   );
 
   // Scenario entries (U02): App may ask this module to run a fixture.
@@ -202,6 +227,7 @@ export default function ConfigModule({
   }, [scenario]);
 
   const analyzePending = useCallback(() => {
+    if (clearState !== "idle" || globallyGated) return;
     if (inputTab === "paste") {
       if (!pasteText.trim()) return;
       const format =
@@ -221,7 +247,7 @@ export default function ConfigModule({
       void runAnalysis((signal) =>
         adapter.analyzeBytes("config", pendingBytes, pendingFormat, lang, signal));
     }
-  }, [inputTab, lang, pasteFormatChoice, pasteText, pendingBytes, pendingFormat, runAnalysis]);
+  }, [inputTab, lang, pasteFormatChoice, pasteText, pendingBytes, pendingFormat, runAnalysis, clearState, globallyGated]);
 
   const onFiles = useCallback((files: FileList | null) => {
     const file = files?.[0];
@@ -236,13 +262,21 @@ export default function ConfigModule({
       setPendingInfo(t("tooLargeConfig", lang));
       return;
     }
+    const ticket = ++fileTicketRef.current;
     const reader = new FileReader();
+    readerRef.current = reader;
     reader.onload = () => {
+      // R03: a clear or a newer selection invalidates this read.
+      if (ticket !== fileTicketRef.current) return;
       const bytes = new Uint8Array(reader.result as ArrayBuffer);
       setPendingBytes(bytes);
       setPendingFormat(format);
       setPendingInfo(`${format.toUpperCase()} · ${formatBytes(bytes.length)}`);
       invalidate();
+    };
+    reader.onerror = () => {
+      if (ticket !== fileTicketRef.current) return;
+      setPendingInfo(`${t("formatLabel", lang)}: .json / .toml`);
     };
     reader.readAsArrayBuffer(file);
   }, [invalidate, lang]);
@@ -253,6 +287,18 @@ export default function ConfigModule({
   const doClear = useCallback(async () => {
     revisionRef.current += 1;
     if (abortRef.current) abortRef.current.abort();
+    // R03: revoke any in-flight/deferred file read and allow re-selecting
+    // the same file later.
+    fileTicketRef.current += 1;
+    if (readerRef.current) {
+      try {
+        readerRef.current.abort();
+      } catch {
+        /* abort unsupported: the ticket check still guards onload */
+      }
+      readerRef.current = null;
+    }
+    if (fileInputRef.current) fileInputRef.current.value = "";
     setPendingBytes(null);
     setPendingInfo(null);
     setPasteText("");
@@ -319,6 +365,7 @@ export default function ConfigModule({
             <button
               key={entry.case_id}
               className="example-card"
+              disabled={gated}
               onClick={() => runCase(entry.case_id)}
             >
               <span className="example-name">
@@ -395,12 +442,16 @@ export default function ConfigModule({
       <div className="input-actions">
         <button
           className="primary analyze-button"
-          disabled={!hasPendingInput || inputDisabled}
+          disabled={!hasPendingInput || inputDisabled || gated}
           onClick={analyzePending}
         >
           {t("analyzeConfig", lang)}
         </button>
-        <button className="ghost" onClick={() => void doClear()}>
+        <button
+          className="ghost"
+          onClick={() => void doClear()}
+          disabled={gated}
+        >
           {t("clearThisModule", lang)}
         </button>
       </div>
@@ -477,7 +528,9 @@ export default function ConfigModule({
           setExpanded={setExpanded}
         />
       )}
-      {result.resultId && (
+      {/* R01: only a ready result is shareable; stale/loading/error
+          keep no export affordance. */}
+      {result.status === "ready" && result.resultId && (
         <ShareBlock
           lang={lang}
           module="config"

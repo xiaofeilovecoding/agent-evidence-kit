@@ -24,9 +24,13 @@ export default function ShareBlock({
   // input, changing format/language, or a newer result revokes the export
   // (format A->B->A also revokes via the snapshot generation).
   const key = resultId ? `${resultId}:${lang}:${format}:${inputRevision}` : null;
-  const { preview, failed, load, invalidate } = useExportPreview<ExportPayload>(key);
+  const { preview, failed, load, invalidate, getPreview } =
+    useExportPreview<ExportPayload>(key);
   const [copyState, setCopyState] = useState<"copied" | "failed" | null>(null);
   const copiedForRef = useRef<string | null>(null);
+  // R04: every copy gets a request generation; the feedback applies
+  // only if this exact copy is still the current preview snapshot.
+  const copySeqRef = useRef(0);
 
   // Any snapshot change revokes copy feedback (bound to the same snapshot).
   useEffect(() => {
@@ -39,20 +43,26 @@ export default function ShareBlock({
 
   const onCopy = useCallback(async () => {
     if (!preview) return;
+    const seq = ++copySeqRef.current;
+    const snapshot = preview;
     try {
       if (!navigator.clipboard || typeof navigator.clipboard.writeText !== "function") {
         throw new Error("clipboard unavailable");
       }
-      await navigator.clipboard.writeText(preview.content);
+      await navigator.clipboard.writeText(snapshot.content);
+      // R04: discard feedback if the preview snapshot changed meanwhile
+      // (format/language A-B-A, newer result, clear, unmount).
+      if (copySeqRef.current !== seq || getPreview() !== snapshot) return;
       copiedForRef.current = key;
       setCopyState("copied");
     } catch {
+      if (copySeqRef.current !== seq || getPreview() !== snapshot) return;
       copiedForRef.current = key;
       setCopyState("failed");
       // Explicit failure: the preview text stays selectable; no
       // execCommand fallback, no clipboard reading.
     }
-  }, [preview, key]);
+  }, [preview, key, getPreview]);
 
   const onDownload = useCallback(() => {
     if (!preview) return;

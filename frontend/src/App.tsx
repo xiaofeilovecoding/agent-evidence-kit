@@ -30,7 +30,9 @@ export default function App() {
   });
   const [privacyOpen, setPrivacyOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
-  const [clearAllState, setClearAllState] = useState<"idle" | "clearing" | "unconfirmed">("idle");
+  const [clearAllState, setClearAllState] = useState<
+    "idle" | "clearing" | "unconfirmed" | "done"
+  >("idle");
   const [clearAllKey, setClearAllKey] = useState(0);
 
   // Language: explicit preference saved; first visit followed the browser.
@@ -77,7 +79,8 @@ export default function App() {
     setClearAllState("clearing");
     try {
       await adapter.clear("all");
-      setClearAllState("idle");
+      // R02: success wording only after the server acknowledged.
+      setClearAllState("done");
     } catch {
       // Page is already cleared; the server-side clear is unconfirmed.
       setClearAllState("unconfirmed");
@@ -210,9 +213,13 @@ export default function App() {
           </div>
         </header>
         <div className="module-tabs-wide">{moduleTabs}</div>
-        {clearAllState !== "idle" && (
+        {(clearAllState === "clearing" || clearAllState === "unconfirmed" || clearAllState === "done") && (
           <div
-            className={clearAllState === "unconfirmed" ? "clear-banner error" : "clear-banner"}
+            className={
+              clearAllState === "unconfirmed"
+                ? "clear-banner error"
+                : "clear-banner"
+            }
             role={clearAllState === "unconfirmed" ? "alert" : "status"}
           >
             {clearAllState === "unconfirmed" ? (
@@ -222,6 +229,8 @@ export default function App() {
                   {t("retryClear", lang)}
                 </button>
               </>
+            ) : clearAllState === "clearing" ? (
+              <span>{t("clearInProgress", lang)}</span>
             ) : (
               <span>{t("clearSuccess", lang)}</span>
             )}
@@ -234,6 +243,7 @@ export default function App() {
               lang={lang}
               visible={activeModule === "config"}
               onStatus={reportConfigStatus}
+              globallyGated={clearAllState === "clearing" || clearAllState === "unconfirmed"}
               combinedSlot={
                 !isShowcase ? (
                   <details className="advanced-combined">
@@ -250,6 +260,7 @@ export default function App() {
               lang={lang}
               visible={activeModule === "stream"}
               onStatus={reportStreamStatus}
+              globallyGated={clearAllState === "clearing" || clearAllState === "unconfirmed"}
               combinedSlot={
                 !isShowcase ? (
                   <details className="advanced-combined">
@@ -268,6 +279,7 @@ export default function App() {
               onClick={() => void doClearAll()}
               disabled={clearAllState === "clearing"}
             >
+
               {t("clearAll", lang)}
             </button>
           </div>

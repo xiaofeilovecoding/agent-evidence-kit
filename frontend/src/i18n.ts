@@ -252,6 +252,10 @@ const STRINGS = {
     "zh-CN": "包含结构事实（字段存在性/类型、事件序列），不含原文/命令/URL/token；分享前请先检查预览。",
     en: "Contains structural facts (field presence/type, event order) — never raw values, commands, URLs, or tokens. Review the preview before sharing.",
   },
+  clearInProgress: {
+    "zh-CN": "正在清空本机会话结果…",
+    en: "Clearing local session results…",
+  },
   clearSuccess: {
     "zh-CN": "本机会话结果已清空。",
     en: "Local session results cleared.",
