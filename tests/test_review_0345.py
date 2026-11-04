@@ -102,11 +102,13 @@ class R0345SourceSwitch(unittest.TestCase):
     def _select_deferred_file(self, page, module, name):
         self.nav(page, "配置检查" if module == "config" else "流结束检查")
         page.locator(f".{module}-module").get_by_role("tab", name="文件").click()
+        buffer = (b'{"mcp_servers": {"deferred": {"command": "x"}}}'
+                  if name.endswith(".json") else
+                  b'data: [DONE]\r\n\r\n')
         with page.expect_file_chooser() as chooser:
             page.locator(f".{module}-module .dropzone .primary").click()
         chooser.value.set_files(
-            {"name": name, "mimeType": "application/json", "buffer":
-             b'{"mcp_servers": {"deferred": {"command": "x"}}}'}
+            {"name": name, "mimeType": "application/json", "buffer": buffer}
         )
 
     # ---- the exact review repro: in-flight analysis vs deferred reader ----
@@ -115,22 +117,70 @@ class R0345SourceSwitch(unittest.TestCase):
             with self.subTest(module=module):
                 page = self._defer_page()
                 self._paste_and_analyze(page, module)
-                self._select_deferred_file(page, module, "synthetic-deferred.json")
+                # Genuinely defer the next file read and verify the flag.
+                self.nav(page, "配置检查" if module == "config" else "流结束检查")
+                page.locator(f".{module}-module").get_by_role(
+                    "tab", name="文件").click()
+                page.evaluate("() => window.__deferFileReads()")
+                self.assertTrue(
+                    page.evaluate("() => window.__deferred === true"),
+                    "file reads must actually be deferred",
+                )
+                fname = ("synthetic-deferred."
+                         + ("json" if module == "config" else "sse"))
+                with page.expect_file_chooser() as chooser:
+                    page.locator(f".{module}-module .dropzone .primary").click()
+                chooser.value.set_files(
+                    {"name": fname, "mimeType": "application/json",
+                     "buffer": (b'{"mcp_servers": {"deferred": {"command": "x"}}}'
+                                if module == "config"
+                                else b'data: [DONE]\r\n\r\n')}
+                )
+                # The read is queued but not completed: no pending info yet.
+                page.wait_for_timeout(300)
+                self.assertEqual(
+                    page.locator(f".{module}-module .pending-info").count(),
+                    0,
+                    "deferred read must not have completed",
+                )
                 # Switch back to Paste WITHOUT editing the cached text.
                 self.nav(page, "配置检查" if module == "config" else "流结束检查")
                 page.locator(f".{module}-module").get_by_role(
                     "tab", name="粘贴").click()
-                # A new analysis is started while the old file read is
-                # still deferred.
+                # Hold the new analysis in flight via route interception.
                 analyze_name = "分析配置" if module == "config" else "分析流"
-                with page.expect_request(
-                    lambda req: "/analyze" in req.url
-                ) as request_info:
-                    page.get_by_role("button", name=analyze_name).click()
-                self.assertTrue(request_info.value.response is None or True)
-                # Release the deferred read: the real request must complete
-                # and the loading banner must clear (no permanent loading).
+                held = []
+                pattern = f"**/api/{module}/analyze*"
+
+                def hold(route):
+                    held.append((route, route.fetch()))
+
+                page.route(pattern, hold)
+                page.get_by_role("button", name=analyze_name).click()
+                page.wait_for_selector(f".{module}-module .status-banner.loading")
+                for _ in range(100):
+                    if held:
+                        break
+                    page.wait_for_timeout(50)
+                self.assertTrue(held, "analyze request must be genuinely held")
+                # Release the deferred read FIRST: old bytes are discarded
+                # by ticket/source checks; the analysis stays in flight.
                 page.evaluate("() => window.__releaseFileReads()")
+                page.wait_for_timeout(400)
+                self.assertEqual(len(held), 1,
+                                 "analysis must not be cancelled")
+                self.assertTrue(
+                    page.locator(
+                        f".{module}-module .status-banner.loading"
+                    ).is_visible(),
+                    "held analysis still in flight",
+                )
+                # Release the real request: it completes normally.
+                for route, upstream in held:
+                    with page.expect_response(pattern) as delivered:
+                        route.fulfill(response=upstream)
+                    delivered.value.body()
+                page.unroute(pattern)
                 page.wait_for_selector(
                     f".{module}-module .status-banner.loading",
                     state="detached",
@@ -158,7 +208,8 @@ class R0345SourceSwitch(unittest.TestCase):
             with self.subTest(module=module):
                 page = self._defer_page()
                 self._paste_and_analyze(page, module)
-                self._select_deferred_file(page, module, "synthetic-deferred.json")
+                self._select_deferred_file(page, module, "synthetic-deferred."
+                                           + ("json" if module == "config" else "sse"))
                 self.nav(page, "配置检查" if module == "config" else "流结束检查")
                 page.locator(f".{module}-module").get_by_role(
                     "tab", name="粘贴").click()

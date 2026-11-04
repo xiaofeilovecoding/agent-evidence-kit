@@ -101,6 +101,11 @@ export default function ConfigModule({
   // into a truthful stale/empty state. Cached input text is kept; share
   // eligibility is not restored by switching back.
   const revokeIdentity = useCallback(() => {
+    // 0457: revocation must bump the token runAnalysis actually checks,
+    // so a held/late response (demo or input analysis) can never apply
+    // its outcome after the identity switched. abort() only saves
+    // resources; the token is what protects correctness.
+    revisionRef.current += 1;
     fileTicketRef.current += 1;
     if (readerRef.current) {
       try {
