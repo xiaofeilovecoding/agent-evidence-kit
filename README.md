@@ -30,16 +30,27 @@ structural facts**: no server names, no commands, no URLs, no tokens, no
 model output text, no hashes, no raw errors. Share the card, keep the
 secrets.
 
-## 30-second demo (no install, no key)
+![Config evidence card](docs/screenshots/desktop-zh-config-residue.png)
+
+## 30-second demo (from a source checkout, no key)
 
 ```bash
-pip install "agent-evidence-kit[web]"
-python -m agent_evidence_kit web          # opens http://127.0.0.1:7411
+git clone <repository-url> && cd agent-evidence-kit   # URL set when the repo is published
+pip install -e ".[web]"
+python -m agent_evidence_kit web                      # opens http://127.0.0.1:7411
 ```
 
 Click any built-in synthetic sample (config or stream), see the evidence
 card, export it. Everything stays on your machine; there is no API key,
 no telemetry, no network access.
+
+Once the package is actually published on PyPI, `pip install
+"agent-evidence-kit[web]"` becomes the fastest entry point; until then
+the source checkout above is the supported install.
+
+![Stream evidence with normal-sample comparison](docs/screenshots/desktop-zh-stream-compare.png)
+
+[中文说明](README.zh-CN.md)
 
 ## CLI
 
@@ -64,6 +75,8 @@ input. The web UI and CLI produce identical cards for identical input.
   session with CSRF and exact same-origin checks, expires idle (30 min)
   and absolute (8 h) sessions, and stores only bounded projections.
 - Deterministic: same input + language + format → byte-identical output.
+
+![Narrow layout with expanded details](docs/screenshots/narrow-390-config-expanded.png)
 
 ## Not a fit for
 
