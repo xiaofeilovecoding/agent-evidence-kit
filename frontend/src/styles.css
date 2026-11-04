@@ -325,6 +325,10 @@ input:focus-visible {
   align-items: start;
 }
 
+.module-hidden {
+  display: none !important;
+}
+
 .panel {
   background: var(--surface);
   border: 1px solid var(--divider);
@@ -333,7 +337,7 @@ input:focus-visible {
   min-width: 0;
 }
 
-.view-switch {
+.module-body .view-switch {
   display: none;
   margin-bottom: 12px;
 }
@@ -1377,7 +1381,7 @@ h3 {
     padding: 0 16px 24px;
   }
 
-  .view-switch {
+  .module-body .view-switch {
     display: flex;
   }
 

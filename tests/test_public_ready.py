@@ -315,13 +315,13 @@ class PublicReadyJourneys(unittest.TestCase):
         entries = page.locator(".config-module .question-card")
         self.assertEqual(entries.count(), 2)
         self.assertIn("配置迁移后", entries.nth(0).inner_text())
+        # Every entry is labeled as a synthetic sample before running.
+        self.assertEqual(page.locator(".config-module .question-tag").count(), 2)
         entries.nth(0).click()
         self.wait_view(page, "config")
         page.get_by_role("button", name="server-1").click()
         page.wait_for_selector(".config-module .service-body")
         self.assertIn("POSSIBLE_TRANSPORT_RESIDUE", page.inner_text("body"))
-        # Each entry is labeled as a synthetic sample.
-        self.assertIn("合成样例", page.inner_text("body"))
 
 
 if __name__ == "__main__":

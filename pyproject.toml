@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "agent-evidence-kit"
-version = "0.1.0"
+version = "0.2.0"
 description = "Local, privacy-safe evidence cards for agent troubleshooting: MCP config structure checks and LLM stream terminal-evidence checks (CLI + local web UI)"
 readme = "README.md"
 requires-python = ">=3.11"

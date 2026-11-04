@@ -120,7 +120,8 @@ class ExportRaces(unittest.TestCase):
     def test_deferred_combined_export_cannot_restore_stale_preview(self):
         self.sample("config")
         self.sample("stream")
-        box = self.combined_box("config")
+        # Only the ACTIVE module's advanced area is interactable.
+        box = self.combined_box("stream")
         box.locator('input[type="checkbox"]').nth(0).check()
         box.locator('input[type="checkbox"]').nth(1).check()
         pattern = "**/api/export/combined"
@@ -174,7 +175,8 @@ class ExportRaces(unittest.TestCase):
     def test_unselected_module_does_not_invalidate_combined_export(self):
         self.sample("config")
         self.sample("stream")
-        box = self.combined_box("config")
+        # Only the ACTIVE module's advanced area is interactable.
+        box = self.combined_box("stream")
         box.locator('input[type="checkbox"]').nth(1).check()
         pattern = "**/api/export/combined"
         pending = self.defer(pattern)
@@ -182,6 +184,8 @@ class ExportRaces(unittest.TestCase):
         self.edit("config")
         self.release(pending, pattern)
         content = box.locator('[data-testid="combined-export-preview"]').inner_text()
+        # Editing config switched the active module; switch back to stream.
+        self.page.locator(".sidebar-nav .nav-item").nth(1).click()
         with self.page.expect_download() as downloaded:
             box.get_by_role("button", name="下载", exact=True).click()
         self.assertEqual(downloaded.value.suggested_filename, "agent-evidence-kit-combined-zh-CN.md")

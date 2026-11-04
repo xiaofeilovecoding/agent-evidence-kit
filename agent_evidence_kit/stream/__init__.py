@@ -3,6 +3,6 @@
 Profile: chat-completions-v1, choice 0 only.
 """
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"
 
 PROFILE = "chat-completions-v1"
