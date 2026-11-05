@@ -24,13 +24,13 @@ def validate_member(name: str, *, source: bool = False) -> None:
     if (path.is_absolute() or ".." in path.parts or "\\" in name
             or re.match(r"^[A-Za-z]:", name)):
         raise ValueError("Unsafe archive path")
-    if set(path.parts) & {".git", ".venv", "node_modules", "__pycache__", "artifacts", "reports"}:
+    if {part.casefold() for part in path.parts} & {".git", ".venv", "node_modules", "__pycache__", "artifacts", "reports"}:
         raise ValueError("Internal or generated files in distribution")
     for part in path.parts:
-        if part == ".env" or part.startswith(".env."):
+        if part.casefold() == ".env" or part.casefold().startswith(".env."):
             if not (source and path.parts[-2:] == ("frontend", ".env.showcase")):
                 raise ValueError("Environment file in distribution")
-    if path.suffix in {".pyc", ".log"}:
+    if path.suffix.casefold() in {".pyc", ".log"}:
         raise ValueError("Generated file in distribution")
 
 

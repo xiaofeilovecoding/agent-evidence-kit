@@ -20,7 +20,7 @@ class DistributionBoundary(unittest.TestCase):
                 validate_member(name)
 
     def test_environment_files_rejected(self):
-        for name in (".env", "package/.env.production", "frontend/.env.showcase"):
+        for name in (".env", "package/.env.production", "package/.ENV.production", "frontend/.env.showcase"):
             with self.subTest(name=name), self.assertRaises(ValueError):
                 validate_member(name)
 
@@ -30,13 +30,13 @@ class DistributionBoundary(unittest.TestCase):
             validate_member("package/.env.showcase", source=True)
 
     def test_internal_files_rejected(self):
-        for name in ("package/reports/review.md", "package/node_modules/a.js",
+        for name in ("package/reports/review.md", "package/Reports/review.md", "package/node_modules/a.js",
                      "package/.git/config", "package/artifacts/key.txt"):
             with self.subTest(name=name), self.assertRaises(ValueError):
                 validate_member(name, source=True)
 
     def test_generated_files_rejected(self):
-        for name in ("package/a.pyc", "package/run.log"):
+        for name in ("package/a.pyc", "package/run.log", "package/run.LOG"):
             with self.subTest(name=name), self.assertRaises(ValueError):
                 validate_member(name)
 
