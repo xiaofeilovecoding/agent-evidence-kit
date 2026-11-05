@@ -1,11 +1,27 @@
 # Agent Evidence Kit
 
+[English](README.md) · [简体中文](README.zh-CN.md)
+
 **Share the evidence. Keep the raw data.**
 
-Local, privacy-safe evidence cards for agent troubleshooting: structure
-checks for MCP server configurations and terminal-evidence checks for
-captured LLM streams. Deterministic, bilingual, exportable — no API key,
-no telemetry, no uploads.
+Turn MCP configurations and captured chat-completions SSE streams into
+structure-only evidence cards for bug reports. Run checks locally, then
+review and share the evidence — without uploading your raw input.
+
+## Why use it?
+
+- **Share useful facts, keep private values out.** Reports contain field
+  presence/types and stream event order; commands, URLs, credentials,
+  generated text and tool arguments stay out of the evidence.
+- **No model calls or API key.** Deterministic checks run on the content
+  you provide, with fixed bilingual guidance and explicit limits on what
+  each finding proves.
+- **Check before sharing.** Preview Markdown or JSON before copying or
+  downloading. Clear shows whether the local service confirmed removal
+  of session results.
+- **A workflow for users and maintainers.** A local web workspace and CLI
+  produce the same evidence, in English or Chinese, ready to attach to
+  an issue. No telemetry or third-party upload.
 
 ![Config evidence card](docs/screenshots/en-config-light.png)
 
@@ -19,7 +35,7 @@ Two bounded checkers in one local tool:
   conflicts, migration residue, field-type problems, each with an
   *Observed / Meaning / Next step / Does not prove* breakdown.
 - **Stream end check** — paste or drop a captured chat-completions SSE
-  stream (`.sse` / `.txt`, ≤8 MiB). Get terminal-evidence evidence: was a
+  stream (`.sse` / `.txt`, ≤8 MiB). Check the captured terminal evidence: was a
   `finish_reason` observed, was `[DONE]` received, truncation,
   `length`/`content_filter` stops, upstream errors, data after `[DONE]` —
   with a normal-termination sample side by side and a 50-per-page event

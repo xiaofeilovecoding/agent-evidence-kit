@@ -24,11 +24,15 @@ terminal-evidence checks.
 
 ## Reporting
 
-There is no dedicated security email and no private disclosure channel
-yet. Once the repository is public, use GitHub's private vulnerability
-reporting for this repository. Until such a channel exists, do not open
-public issues for security problems; coordinate with the maintainers
-directly through an existing contact you already have.
+Use **Security → Report a vulnerability** in this repository to send a
+private report to the maintainers. The entry is on the repository's
+[security page](https://github.com/xiaofeilovecoding/agent-evidence-kit/security).
+There is no dedicated security email.
+
+Please do not disclose security-sensitive details in public issues or
+attach real credentials. Describe the affected version, expected and
+observed behavior, and a minimal synthetic reproduction in the private
+report.
 
 ## Design invariants worth protecting in review
 
