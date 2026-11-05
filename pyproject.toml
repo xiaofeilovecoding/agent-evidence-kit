@@ -55,6 +55,8 @@ include = [
   "/README.zh-CN.md",
   "/LICENSE",
   "/CONTRIBUTING.md",
+  "/docs/MAINTAINING.md",
+  "/.github/requirements-ci.txt",
   "/SECURITY.md",
   "/docs/screenshots",
 ]

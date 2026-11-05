@@ -8,83 +8,160 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  PYTHONUTF8: "1"
+  PIP_DISABLE_PIP_VERSION_CHECK: "1"
+
 jobs:
   core:
     runs-on: ubuntu-latest
+    timeout-minutes: 8
     strategy:
+      fail-fast: false
       matrix:
         python-version: ["3.11", "3.14"]
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: ${{ matrix.python-version }}
-      - name: Run core tests (standard library only)
+      - name: Core tests without optional dependencies
         run: python -m unittest discover -s tests -v
 
   web:
     runs-on: ubuntu-latest
+    timeout-minutes: 8
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: "3.12"
-      - name: Install with web extra
-        run: pip install -e ".[web]" httpx
-      - name: Run HTTP layer tests
-        run: python -m unittest tests.test_web tests.test_clear_race -v
-
-  browser:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-      - name: Install with web extra and Playwright
-        run: pip install -e ".[web]" httpx playwright
-      - name: Install Chromium
-        run: python -m playwright install --with-deps chromium
-      - name: Build frontend (local UI + showcase)
-        run: |
-          cd frontend
-          npm ci --no-audit --no-fund
-          npm run build
-          npm run build:showcase
-      - name: Run the full suite via one discover (no module can be skipped)
-        env:
-          PYTHONUTF8: "1"
-        run: python -m unittest discover -s tests -v
+      - run: python -m pip install -e ".[web]" httpx
+      - run: python -m unittest tests.test_web tests.test_clear_race -v
 
   frontend:
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: frontend
+    timeout-minutes: 8
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version: 22
-      - run: npm ci --no-audit --no-fund
-      - name: Typecheck
-        run: npm run typecheck
-      - name: Build local UI
-        run: npm run build
-      - name: Build sample showcase
-        run: npm run build:showcase
-      - uses: actions/setup-python@v5
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: "3.12"
-      - name: Install browser test dependencies
-        working-directory: .
+      - name: Locked install, typecheck, builds and dependency audit
+        working-directory: frontend
+        run: |
+          npm ci --no-audit --no-fund
+          npm run build
+          npm run build:showcase
+          npm audit --registry=https://registry.npmjs.org --audit-level=high
+      - name: Check packaged assets match the source build
+        run: python scripts/build_frontend.py --check
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: frontend-assets
+          path: |
+            frontend/dist
+            frontend/dist-showcase
+          if-no-files-found: error
+          retention-days: 1
+
+  browser:
+    needs: frontend
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.12"
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: frontend-assets
+          path: frontend
+      - name: Install web and browser dependencies
         run: |
           python -m pip install -e ".[web]" httpx playwright
           python -m playwright install --with-deps chromium
           python scripts/build_frontend.py --sync-only
-      - name: Run real browser and delayed-response regressions
-        working-directory: .
-        run: python -m unittest tests.test_browser tests.test_review_fixes tests.test_export_races -v
+      - name: Full core, HTTP and real-browser suite
+        run: python -m unittest discover -s tests -v
+
+  package:
+    name: package (${{ matrix.os }})
+    needs: frontend
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.11"
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: frontend-assets
+          path: frontend
+      - name: Build and install outside the checkout
+        shell: bash
+        run: |
+          python -m pip install -r .github/requirements-ci.txt
+          python scripts/build_frontend.py --sync-only
+          python -m build
+          python scripts/check_distribution.py dist
+
+  secrets:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Verify scanner checksum and scan Git history
+        shell: bash
+        run: |
+          curl --fail --silent --show-error --location --max-time 60 https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/gitleaks_8.30.1_linux_x64.tar.gz --output "$RUNNER_TEMP/gitleaks.tar.gz"
+          echo "551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb  $RUNNER_TEMP/gitleaks.tar.gz" | sha256sum --check
+          tar -xzf "$RUNNER_TEMP/gitleaks.tar.gz" -C "$RUNNER_TEMP" gitleaks
+          "$RUNNER_TEMP/gitleaks" git . --redact --no-banner --log-opts=--all
+
+  dependencies:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.12"
+      - name: Audit resolved Python runtime dependencies
+        shell: bash
+        run: |
+          python -m pip install -r .github/requirements-ci.txt
+          python -m venv "$RUNNER_TEMP/audit-env"
+          "$RUNNER_TEMP/audit-env/bin/python" -m pip install ".[web]"
+          "$RUNNER_TEMP/audit-env/bin/python" -c "import importlib.metadata as m; print('\n'.join(sorted(d.metadata['Name']+'=='+d.version for d in m.distributions() if d.metadata['Name'].lower() not in {'pip','setuptools','wheel','agent-evidence-kit'})))" > "$RUNNER_TEMP/runtime-requirements.txt"
+          python -m pip_audit --requirement "$RUNNER_TEMP/runtime-requirements.txt" --no-deps --disable-pip --timeout 20 --progress-spinner off
