@@ -31,3 +31,14 @@ class AssetParity(unittest.TestCase):
             root = Path(directory).resolve()
             self.assertEqual(root.parent, Path(tempfile.gettempdir()).resolve())
             self.assertFalse(check_assets(root / "missing", root / "also-missing"))
+
+    def test_line_endings_are_part_of_the_shipped_bytes(self):
+        with tempfile.TemporaryDirectory(prefix="aek-assets-") as directory:
+            root = Path(directory).resolve()
+            self.assertEqual(root.parent, Path(tempfile.gettempdir()).resolve())
+            dist, packaged = root / "dist", root / "package"
+            dist.mkdir()
+            packaged.mkdir()
+            (dist / "index.html").write_bytes(b"<html>\n</html>\n")
+            (packaged / "index.html").write_bytes(b"<html>\r\n</html>\r\n")
+            self.assertFalse(check_assets(dist, packaged))
