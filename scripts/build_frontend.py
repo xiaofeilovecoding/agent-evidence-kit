@@ -34,11 +34,32 @@ def run(cmd: list[str], cwd: Path) -> None:
     subprocess.run(cmd, cwd=cwd, check=True)
 
 
+def check_assets(dist: Path, packaged: Path) -> bool:
+    """Compare complete file sets and bytes, including obsolete hashed assets."""
+    if not (dist / "index.html").is_file():
+        return False
+    def files(root: Path) -> dict[str, bytes]:
+        return {path.relative_to(root).as_posix(): path.read_bytes()
+                for path in root.rglob("*") if path.is_file()}
+    return files(dist) == files(packaged)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--sync-only", action="store_true",
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument("--sync-only", action="store_true",
                         help="skip npm and rebuild steps; only sync dist/")
+    mode.add_argument("--check", action="store_true",
+                      help="compare existing dist/ with packaged assets without changing files")
     args = parser.parse_args()
+
+    if args.check:
+        if check_assets(FRONTEND / "dist", PACKAGE_STATIC):
+            print("built and packaged frontend assets match")
+            return 0
+        print("packaged frontend differs; run scripts/build_frontend.py and commit the assets",
+              file=sys.stderr)
+        return 1
 
     if not args.sync_only:
         run(["npm", "ci", "--no-audit", "--no-fund"], FRONTEND)
@@ -51,6 +72,9 @@ def main() -> int:
         return 1
 
     # Clean sync: never leave stale hashed assets behind (R08).
+    target = PACKAGE_STATIC.resolve()
+    if target == PROJECT_ROOT.resolve() or not target.is_relative_to(PROJECT_ROOT.resolve()):
+        raise ValueError("Asset sync target is outside the project")
     if PACKAGE_STATIC.is_dir():
         shutil.rmtree(PACKAGE_STATIC)
     shutil.copytree(dist, PACKAGE_STATIC)

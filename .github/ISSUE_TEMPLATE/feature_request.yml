@@ -1,0 +1,23 @@
+name: Feature request / 功能建议
+description: Describe the user problem and the improvement you need.
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: User problem / 需要解决的问题
+      description: Who needs this, and what are they trying to accomplish? Avoid private inputs.
+    validations:
+      required: true
+  - type: textarea
+    id: outcome
+    attributes:
+      label: Desired outcome / 希望的效果
+      description: A concrete example is more useful than a long feature list.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives and scope / 替代方案与范围
+      description: Optional; existing workarounds and privacy or compatibility concerns.
