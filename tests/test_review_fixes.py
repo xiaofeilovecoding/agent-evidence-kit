@@ -139,6 +139,9 @@ class ReviewFixJourneys(unittest.TestCase):
         self.page.locator(".config-module").get_by_role("tab", name="粘贴").click()
         self.page.locator(".config-module textarea").fill('{"mcp_servers": {}}')
         self.page.wait_for_selector(".config-module .status-banner.stale")
+        # The module and its parent's share controls commit together before
+        # paint. Inspect the rendered frame, not an intermediate DOM commit.
+        self.page.evaluate("() => new Promise(requestAnimationFrame)")
         self.assertEqual(
             self.page.locator('[data-testid="combined-export-preview"]').count(), 0
         )
@@ -157,6 +160,7 @@ class ReviewFixJourneys(unittest.TestCase):
         combined.locator('[data-testid="combined-export-preview"]').wait_for()
         self.page.get_by_role("button", name="English").click()
         self.page.wait_for_selector(".config-module .outcome-banner")
+        self.page.evaluate("() => new Promise(requestAnimationFrame)")
         self.assertEqual(combined.locator('[data-testid="combined-export-preview"]').count(), 0)
 
     # ---- C05 ----
