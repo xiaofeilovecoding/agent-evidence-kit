@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import type { CatalogCase, ConfigCard } from "./types";
 import type { Lang } from "./i18n";
@@ -166,7 +166,8 @@ export default function ConfigModule({
     };
   }, [lang]);
 
-  useEffect(() => {
+  // Sharing in the other module must observe revocation before paint.
+  useLayoutEffect(() => {
     onStatus({ status: result.status, resultId: result.resultId });
   }, [result.status, result.resultId, onStatus]);
 
