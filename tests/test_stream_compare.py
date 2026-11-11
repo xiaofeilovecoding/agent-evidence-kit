@@ -374,6 +374,24 @@ class WebCompareCase(unittest.TestCase):
 
     # ---- E03: server-issued run identity ----
 
+
+    def test_compare_validates_bound_side_results(self):
+        """E04: the caller must hand back exactly the side results the current
+        run landed — ids from any other stream slot are refused."""
+        # a single-stream result exists alongside the compare run
+        normal = self.analyze(NORMAL, slot="current").json()
+        run_id = self.prepare()
+        base = self.analyze(NORMAL, slot="baseline", run_id=run_id).json()
+        cand = self.analyze(b'data: {"error": {"x": 1}}\n\n', slot="candidate", run_id=run_id).json()
+        # swapping in the normal result for one side is refused
+        swapped = self.compare(normal["result_id"], cand["result_id"], run_id)
+        self.assertEqual(swapped.status_code, 409, "foreign result id refused")
+        swapped2 = self.compare(base["result_id"], normal["result_id"], run_id)
+        self.assertEqual(swapped2.status_code, 409, "foreign result id refused")
+        # the exact bound pair still compares
+        ok = self.compare(base["result_id"], cand["result_id"], run_id)
+        self.assertEqual(ok.status_code, 200)
+
     def test_prepare_revokes_previous_run_immediately(self):
         # the reported defect: after a successful comparison, a refreshed page
         # (fresh prepare) must not collide with stale session state — and the

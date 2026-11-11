@@ -762,6 +762,70 @@ class BrowserJourney(unittest.TestCase):
         self.assertEqual(new_share.count(), 1, "the new comparison is shareable")
         self.assertEqual(self.console_errors, [])
 
+    def test_compare_superseded_click_never_submits_stale_inputs(self):
+        """E04 (the reported defect): ready result → cancel held → compare
+        clicked → baseline edited again → cancel released — the superseded
+        click must submit NOTHING (no prepare), and a fresh click lands a
+        new comparison that is shareable."""
+        self.open_stream_paste()
+        compare = self.view("stream").locator('[data-testid="stream-compare"]')
+        compare.locator("summary").click()
+        compare.get_by_role("button", name="载入正常样例 → 基线").click()
+        compare.get_by_role("button", name="载入上游错误样例 → 候选").click()
+        compare.locator('[data-testid="compare-run"]').click()
+        compare.locator('[data-testid="compare-result"]').wait_for(timeout=15000)
+        # hold every prepare and cancel from here on, counting prepares
+        held_cancels: list[object] = []
+        prepare_calls: list[int] = [0]
+        self.page.route("**/api/stream/compare/prepare", lambda route: (
+            prepare_calls.__setitem__(0, prepare_calls[0] + 1),
+            route.continue_(),
+        ))
+        self.page.route(
+            "**/api/stream/compare/cancel",
+            lambda route: held_cancels.append(route),
+        )
+        # the first edit fires a cancel request, which we hold
+        compare.locator('[data-testid="compare-baseline-input"]').fill(
+            'data: {"choices": [{"index": 0, "delta": {"content": "first edit"}}]}'
+            + chr(10) * 2
+        )
+        deadline = time.time() + 10
+        while not held_cancels and time.time() < deadline:
+            self.page.wait_for_timeout(50)
+        self.assertTrue(held_cancels, "cancel captured in flight")
+        # the user clicks compare while the cancel is still held; the click
+        # waits on the cancel before it could ever prepare
+        compare.locator('[data-testid="compare-run"]').click()
+        self.page.wait_for_timeout(120)
+        # the user edits AGAIN during the wait: this supersedes the click
+        compare.locator('[data-testid="compare-baseline-input"]').fill(
+            'data: {"choices": [{"index": 0, "delta": {"content": "second edit"}}]}'
+            + chr(10) * 2
+        )
+        # release the held cancel: the superseded click must submit nothing
+        for route in held_cancels:
+            route.continue_()
+        self.page.wait_for_timeout(700)
+        self.assertEqual(
+            prepare_calls[0], 0,
+            "the superseded click submitted nothing (prepare routes installed after run 1)",
+        )
+        self.assertEqual(
+            compare.locator('[data-testid="compare-result"]').count(), 0,
+            "no stale comparison appeared",
+        )
+        # a fresh click prepares a new run and lands a shareable result
+        run_btn = compare.locator('[data-testid="compare-run"]')
+        self.assertTrue(run_btn.is_enabled(), "run button usable after supersede")
+        run_btn.click()
+        compare.locator('[data-testid="compare-result"]').wait_for(timeout=15000)
+        self.assertEqual(prepare_calls[0], 1, "the fresh click prepared exactly one new run")
+        self.assertEqual(compare.locator(".share-block, .export-block").count(), 1)
+        self.page.unroute("**/api/stream/compare/prepare")
+        self.page.unroute("**/api/stream/compare/cancel")
+        self.assertEqual(self.console_errors, [])
+
     def test_compare_side_clear_and_both_clear(self):
         """E02: per-side clear empties only that side; the combined clear
         empties both; the two sides keep distinct file/clear controls."""

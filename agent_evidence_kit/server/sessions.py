@@ -69,8 +69,11 @@ class _Session:
         # identity survives page refreshes and is never re-counted client-side
         # (a refreshed tab cannot collide with stale session state).
         self.compare_run_id: str | None = None
-        # which run each compare-mode slot belongs to
+        # which run each compare-mode slot belongs to, and which exact result
+        # id was landed for it (E04: the comparison must read exactly the
+        # sides of the current run, never an arbitrary stream slot)
         self.compare_side_run: dict[str, str] = {}
+        self.compare_side_result: dict[str, str] = {}
         self.compare_result_run: str | None = None
         self.in_flight = 0
         self.lock = threading.Lock()

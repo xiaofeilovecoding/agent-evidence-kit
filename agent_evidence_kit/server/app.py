@@ -420,6 +420,7 @@ def create_app(store: SessionStore | None = None,
                 session.compare_generation += 1
                 session.compare_run_id = None
                 session.compare_side_run.clear()
+                session.compare_side_result.clear()
                 session.compare_result_run = None
             elif module in MODULES:
                 session.slots[module].clear()
@@ -428,6 +429,7 @@ def create_app(store: SessionStore | None = None,
                     session.compare_generation += 1
                     session.compare_run_id = None
                     session.compare_side_run.clear()
+                    session.compare_side_result.clear()
                     session.compare_result_run = None
             else:
                 raise HttpError(422, "BAD_MODULE")
@@ -530,6 +532,7 @@ def create_app(store: SessionStore | None = None,
             if compare_mode:
                 with session.lock:
                     session.compare_side_run[slot] = run_id
+                    session.compare_side_result[slot] = result["result_id"]
             return result
         finally:
             with session.lock:
@@ -565,6 +568,13 @@ def create_app(store: SessionStore | None = None,
                 or session.compare_side_run.get("candidate") != run_id
             ):
                 raise HttpError(409, "STALE_ANALYSIS")
+            # E04: the caller must hand back exactly the side results this run
+            # landed — a result id from any other stream slot is refused.
+            if (
+                session.compare_side_result.get("baseline") != baseline_id
+                or session.compare_side_result.get("candidate") != candidate_id
+            ):
+                raise HttpError(409, "STALE_ANALYSIS")
         baseline_module, baseline_slot = _owned_result(session, baseline_id)
         candidate_module, candidate_slot = _owned_result(session, candidate_id)
         if baseline_module != "stream" or candidate_module != "stream":
@@ -593,6 +603,7 @@ def create_app(store: SessionStore | None = None,
             session.compare_generation += 1
             session.compare_run_id = secrets.token_urlsafe(16)
             session.compare_side_run.clear()
+            session.compare_side_result.clear()
             session.compare_result_run = None
             for slot_name in ("baseline", "candidate", "compare"):
                 session.slots["stream"].pop(slot_name, None)
@@ -618,9 +629,11 @@ def create_app(store: SessionStore | None = None,
             if session.compare_side_run.get("baseline") == run_id:
                 session.slots["stream"].pop("baseline", None)
                 session.compare_side_run.pop("baseline", None)
+                session.compare_side_result.pop("baseline", None)
             if session.compare_side_run.get("candidate") == run_id:
                 session.slots["stream"].pop("candidate", None)
                 session.compare_side_run.pop("candidate", None)
+                session.compare_side_result.pop("candidate", None)
             if session.compare_result_run == run_id:
                 session.slots["stream"].pop("compare", None)
                 session.compare_result_run = None

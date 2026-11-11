@@ -273,6 +273,20 @@ export default function StreamCompare({ lang, gated }: Props) {
       setMessage(t("tooLargeStream", lang));
       return;
     }
+    // E04: submission ownership is taken BEFORE any wait — the revision token
+    // and the exact input bytes of THIS click are locked here, so an edit
+    // during a pending cancel supersedes the click and the stale inputs can
+    // never reach the server.
+    compareRevRef.current += 1;
+    const rev = compareRevRef.current;
+    if (abortRef.current) abortRef.current.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
+    readyRef.current = false;
+    setStatus("loading");
+    setMessage(null);
+    setCard(null);
+    setCompareId(null);
     // E03 ordering: an in-flight server cancel settles before the prepare so
     // revocation and creation stay ordered; the prepare itself revokes
     // everything the previous run landed, immediately.
@@ -285,21 +299,24 @@ export default function StreamCompare({ lang, gated }: Props) {
         /* handled by the cancel error path; the run proceeds fail-closed */
       }
     }
-    compareRevRef.current += 1;
-    const rev = compareRevRef.current;
-    if (abortRef.current) abortRef.current.abort();
-    const controller = new AbortController();
-    abortRef.current = controller;
-    readyRef.current = false;
-    setStatus("loading");
-    setMessage(null);
-    setCard(null);
-    setCompareId(null);
+    // E04: after the wait, re-check ownership — an edit during the wait
+    // bumped the revision and this superseded click submits NOTHING.
+    if (rev !== compareRevRef.current || !mountedRef.current) {
+      setStatus((prev) => (prev === "loading" ? "empty" : prev));
+      return;
+    }
     try {
       // E03: the server issues this run's identity; the prepare already
       // revoked everything the previous run landed.
       const prepared = await adapter.prepareCompare();
-      if (rev !== compareRevRef.current || !mountedRef.current) return;
+      if (rev !== compareRevRef.current || !mountedRef.current) {
+        // E04: a late prepared identity is cleaned up server-side and must
+        // not interfere with the newer run.
+        runIdRef.current = prepared.run_id;
+        fireServerCancel();
+        runIdRef.current = null;
+        return;
+      }
       const runId = prepared.run_id;
       runIdRef.current = runId;
       const baselineOutcome = await adapter.analyzeBytes(
