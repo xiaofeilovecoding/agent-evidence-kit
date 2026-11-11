@@ -59,6 +59,18 @@ class _Session:
         # Generation counter per module: clear() bumps it atomically, so an
         # in-flight analysis started before the clear can no longer land.
         self.generation: dict[str, int] = {m: 0 for m in MODULES}
+        # Compare mode keeps its own generation so revoking the two compare
+        # sides and the comparison never disturbs a confirmed single-stream
+        # result (E02: isolation; revocation and the next compare run are
+        # ordered by this counter).
+        self.compare_generation = 0
+        # E02 ordering: client-side monotonic sequence numbers. A revoke
+        # carries the seq it was issued at; a compare run carries the seq it
+        # started at. A revoke can only drop results created at or before its
+        # own seq, so a late (retried/lost-then-replayed) revoke can never
+        # wipe a newer comparison.
+        self.compare_last_seq = 0
+        self.compare_slot_seq: dict[str, int] = {}
         self.in_flight = 0
         self.lock = threading.Lock()
 

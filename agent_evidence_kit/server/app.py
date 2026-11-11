@@ -417,9 +417,12 @@ def create_app(store: SessionStore | None = None,
                 for m in MODULES:
                     session.slots[m].clear()
                     session.generation[m] += 1
+                session.compare_generation += 1
             elif module in MODULES:
                 session.slots[module].clear()
                 session.generation[module] += 1
+                if module == "stream":
+                    session.compare_generation += 1
             else:
                 raise HttpError(422, "BAD_MODULE")
         return {"cleared": True}
@@ -496,15 +499,22 @@ def create_app(store: SessionStore | None = None,
         if slot not in ("current", "baseline", "candidate"):
             raise HttpError(422, "BAD_SLOT")
         # C02: capture the generation BEFORE reading the body (see above).
+        # Compare-mode sides guard their own generation (E02 isolation): a
+        # compare revoke never invalidates a confirmed single-stream result.
         with session.lock:
             if session.in_flight >= MAX_CONCURRENT_ANALYSES:
                 raise HttpError(429, "TOO_MANY_ANALYSES")
             session.in_flight += 1
-            generation = session.generation["stream"]
+            generation = (
+                session.compare_generation
+                if slot in ("baseline", "candidate")
+                else session.generation["stream"]
+            )
         try:
             body = await _read_body_limited(request)
             return _run_stream_analysis(session, generation, body, lang,
-                                        slot, projection_limit)
+                                        slot, projection_limit,
+                                        compare_guard=slot in ("baseline", "candidate"))
         finally:
             with session.lock:
                 session.in_flight -= 1
@@ -520,22 +530,57 @@ def create_app(store: SessionStore | None = None,
         baseline_id = payload.get("baseline")
         candidate_id = payload.get("candidate")
         lang = payload.get("lang")
+        run_seq = payload.get("run_seq")
         if not isinstance(baseline_id, str) or not isinstance(candidate_id, str):
+            raise HttpError(422, "BAD_JSON")
+        if not isinstance(run_seq, int) or isinstance(run_seq, bool) or run_seq < 1:
             raise HttpError(422, "BAD_JSON")
         if lang not in LANGUAGES:
             raise HttpError(422, "BAD_LANGUAGE")
         # The comparison reads ONLY the two stored projections. Both must
-        # belong to the CURRENT stream generation: a clear() between the
-        # side analyses and this call invalidates the whole comparison.
+        # belong to the CURRENT compare generation: a revoke or clear between
+        # the side analyses and this call invalidates the whole comparison.
         with session.lock:
-            generation = session.generation["stream"]
+            generation = session.compare_generation
+            # E02 ordering: a run started before a recorded revoke can never
+            # land after it.
+            if run_seq <= session.compare_last_seq:
+                raise HttpError(409, "STALE_ANALYSIS")
         baseline_module, baseline_slot = _owned_result(session, baseline_id)
         candidate_module, candidate_slot = _owned_result(session, candidate_id)
         if baseline_module != "stream" or candidate_module != "stream":
             raise HttpError(404, "NO_RESULT")
         compare_core = compare_projections(baseline_slot.core, candidate_slot.core)
-        return _land_result(session, "stream", generation, "compare",
-                            compare_core, lang, projection_limit)
+        result = _land_result(session, "stream", generation, "compare",
+                              compare_core, lang, projection_limit, compare_guard=True)
+        with session.lock:
+            # record the run's sequence after a successful landing so a later
+            # revoke can only drop results from its own past
+            session.compare_slot_seq["compare"] = run_seq
+        return result
+
+    @app.post("/api/stream/compare/revoke")
+    async def stream_compare_revoke(request: Request):
+        host = _check_host(request)
+        session = _session_from_cookie(request)
+        _require_exact_origin(request, host)
+        _require_csrf(request, session)
+        _check_content_type(request, "application/json")
+        payload = await _read_json_payload(request)
+        revoke_seq = payload.get("revoke_seq")
+        if not isinstance(revoke_seq, int) or isinstance(revoke_seq, bool) or revoke_seq < 1:
+            raise HttpError(422, "BAD_JSON")
+        # E02: revoking the two compare sides and the comparison is isolated
+        # from a confirmed single-stream result, and can only drop results
+        # created at or before the revoke's own sequence — a late revoke
+        # cannot wipe a newer comparison.
+        with session.lock:
+            session.compare_last_seq = max(session.compare_last_seq, revoke_seq)
+            for slot_name in ("baseline", "candidate", "compare"):
+                if session.compare_slot_seq.get(slot_name, 0) <= revoke_seq:
+                    session.slots["stream"].pop(slot_name, None)
+                    session.compare_slot_seq.pop(slot_name, None)
+        return {"revoked": True}
 
     @app.post("/api/stream/demo")
     async def stream_demo(request: Request):
@@ -584,7 +629,8 @@ def _run_config_analysis(session, generation: int, raw: bytes,
 
 
 def _run_stream_analysis(session, generation: int, raw: bytes, language: str,
-                         slot_name: str, projection_limit: int):
+                         slot_name: str, projection_limit: int,
+                         compare_guard: bool = False):
     if len(raw) > STREAM_MAX_INPUT_BYTES:
         core: dict = {"error": "INPUT_TOO_LARGE"}
     else:
@@ -595,16 +641,18 @@ def _run_stream_analysis(session, generation: int, raw: bytes, language: str,
         except RecursionError:  # defensive: event parsing must never traceback
             core = {"error": "LIMIT_EXCEEDED"}
     return _land_result(session, "stream", generation, slot_name, core,
-                        language, projection_limit)
+                        language, projection_limit, compare_guard=compare_guard)
 
 
 def _land_result(session, module: str, generation: int, slot_name: str,
-                 core: dict, language: str, projection_limit: int):
+                 core: dict, language: str, projection_limit: int,
+                 compare_guard: bool = False):
     size = estimate_size({"core": core})
     with session.lock:
-        if session.generation[module] != generation:
-            # R05: a clear() happened while this analysis was in flight; the
-            # stale result must not land in a slot.
+        current = session.compare_generation if compare_guard else session.generation[module]
+        if current != generation:
+            # R05: a clear()/revoke happened while this analysis was in
+            # flight; the stale result must not land in a slot.
             raise HttpError(409, "STALE_ANALYSIS")
         total = sum(
             slot.bytes

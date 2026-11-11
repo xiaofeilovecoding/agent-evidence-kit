@@ -19,7 +19,9 @@ export interface DataAdapter {
     candidateId: string,
     lang: Lang,
     signal?: AbortSignal,
+    runSeq?: number,
   ): Promise<AnalysisOutcome>;
+  revokeCompare(revokeSeq?: number): Promise<void>;
   rerender(resultId: string, lang: Lang): Promise<Card>;
   export(resultId: string, lang: Lang, format: "json" | "md"): Promise<ExportPayload>;
   exportCombined(
@@ -150,7 +152,12 @@ export function createApiAdapter(): DataAdapter {
         return (await response.json()) as AnalysisOutcome;
       });
     },
-    async compareStream(baselineId, candidateId, lang, signal) {
+    async revokeCompare(revokeSeq) {
+      const payload: Record<string, unknown> = {};
+      if (revokeSeq !== undefined) payload.revoke_seq = revokeSeq;
+      await postJson("/api/stream/compare/revoke", payload);
+    },
+    async compareStream(baselineId, candidateId, lang, signal, runSeq) {
       return withRecovery(async (_retry) => {
         await ensureSession();
         const response = await fetch("/api/stream/compare", {
@@ -165,6 +172,7 @@ export function createApiAdapter(): DataAdapter {
             baseline: baselineId,
             candidate: candidateId,
             lang,
+            ...(runSeq !== undefined ? { run_seq: runSeq } : {}),
           }),
         });
         if (!response.ok) await readError(response);

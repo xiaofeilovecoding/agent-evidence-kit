@@ -102,6 +102,8 @@ const STRINGS = {
   usageSeen: { "zh-CN": "usage出现", en: "usage seen" },
   compareTitle: { "zh-CN": "与正常样例对照", en: "Compare with normal sample" },
   // stream compare (baseline vs candidate)
+    clearSide: { "zh-CN": "清除本侧", en: "Clear this side" },
+  compareClearBoth: { "zh-CN": "清除两侧", en: "Clear both sides" },
   compareSectionTitle: { "zh-CN": "正常 vs 异常比较", en: "Baseline vs candidate compare" },
   compareSectionHint: {
     "zh-CN": "展开后输入两侧捕获流：基线（正常）与候选（待比较）。比较只读取结构投影。",

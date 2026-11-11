@@ -69,6 +69,8 @@ function formatValue(field: string, value: unknown, lang: Lang): string {
   return String(value);
 }
 
+type Side = "baseline" | "candidate";
+
 export default function StreamCompare({ lang, gated }: Props) {
   const [baselineText, setBaselineText] = useState("");
   const [candidateText, setCandidateText] = useState("");
@@ -78,54 +80,76 @@ export default function StreamCompare({ lang, gated }: Props) {
   const [compareId, setCompareId] = useState<string | null>(null);
   const [inputRevision, setInputRevision] = useState(0);
   const compareRevRef = useRef(0);
+  // E02 ordering: monotonically increasing sequence for revokes and runs.
+  const compareSeqRef = useRef(0);
   const abortRef = useRef<AbortController | null>(null);
   const mountedRef = useRef(true);
-  const clearTimerRef = useRef<number | undefined>(undefined);
+  // E02: at most one server revoke is in flight; the next compare run awaits
+  // it so revocation and creation stay ordered by the compare generation.
+  const pendingRevokeRef = useRef<Promise<void> | null>(null);
+  // E01: a ready comparison exists — the next edit fires exactly one server
+  // revoke (never per keystroke) and immediately drops the old share.
+  const readyRef = useRef(false);
+  // E02: per-side file reads carry side + generation tickets.
+  const fileTicketRef = useRef<Record<Side, number>>({ baseline: 0, candidate: 0 });
+  const fileInputRef = useRef<Record<Side, HTMLInputElement | null>>({
+    baseline: null,
+    candidate: null,
+  });
 
   useEffect(() => {
     mountedRef.current = true;
     return () => {
       mountedRef.current = false;
-      window.clearTimeout(clearTimerRef.current);
     };
   }, []);
 
+  const fireServerRevoke = useCallback(() => {
+    const revokeSeq = ++compareSeqRef.current;
+    const pending = adapter
+      .revokeCompare(revokeSeq)
+      .catch(() => {
+        // Transfer failed: say so precisely — the old share stays disabled
+        // locally and the next compare run will surface any stale rejection.
+        if (mountedRef.current) {
+          setStatus((prev) => (prev === "loading" ? "empty" : prev));
+          setMessage(
+            lang === "zh-CN"
+              ? "撤销请求未确认：旧分享保持禁用；重新比较将按当前代次执行。"
+              : "Revoke was not confirmed: the previous share stays disabled; the next compare runs under the current generation.",
+          );
+        }
+      });
+    pendingRevokeRef.current = pending;
+    return pending;
+  }, [lang]);
+
   /** Any edit/new run revokes the previous comparison immediately: the UI
-   * drops it, and the server-side clear wipes both sides' stored results so
-   * a held old result_id can never be exported afterwards. */
+   * drops it and exits loading (the run button is usable again), and the
+   * server revoke fires once per ready→edit transition. */
   const revoke = useCallback(
-    (resetMessage: boolean) => {
+    (fireServer: boolean) => {
       compareRevRef.current += 1;
       if (abortRef.current) abortRef.current.abort();
+      const wasReady = readyRef.current;
+      readyRef.current = false;
       setCard(null);
       setCompareId(null);
       setInputRevision((r) => r + 1);
-      if (resetMessage) setMessage(null);
-      window.clearTimeout(clearTimerRef.current);
-      adapter
-        .clear("stream")
-        .then(() => {
-          if (mountedRef.current) setMessage(null);
-        })
-        .catch(() => {
-          // Clear transfer failed: say so precisely, and the share stays
-          // disabled because the comparison was already dropped locally.
-          if (mountedRef.current) {
-            setStatus((prev) => prev);
-            setMessage(
-              lang === "zh-CN"
-                ? "清除请求未确认：旧分享保持禁用。"
-                : "Clear was not confirmed: the previous share stays disabled.",
-            );
-          }
-        });
+      // E01: an in-flight compare must leave loading — the stale response is
+      // dropped by the generation check and the button is usable again.
+      setStatus((prev) => (prev === "loading" ? "empty" : prev));
+      setMessage(null);
+      if (fireServer && wasReady && !isShowcase) {
+        fireServerRevoke();
+      }
     },
-    [lang],
+    [fireServerRevoke],
   );
 
   const onEdit = useCallback(
-    (side: "baseline" | "candidate", value: string) => {
-      revoke(true);
+    (side: Side, value: string) => {
+      revoke(readyRef.current);
       if (side === "baseline") setBaselineText(value);
       else setCandidateText(value);
     },
@@ -133,12 +157,72 @@ export default function StreamCompare({ lang, gated }: Props) {
   );
 
   const loadSample = useCallback(
-    (side: "baseline" | "candidate") => {
-      revoke(true);
+    (side: Side) => {
+      revoke(readyRef.current);
       if (side === "baseline") setBaselineText(SAMPLE_BASELINE);
       else setCandidateText(SAMPLE_CANDIDATE);
     },
     [revoke],
+  );
+
+  const clearSide = useCallback(
+    (side: Side) => {
+      revoke(readyRef.current);
+      fileTicketRef.current[side] += 1;
+      if (fileInputRef.current[side]) fileInputRef.current[side]!.value = "";
+      if (side === "baseline") setBaselineText("");
+      else setCandidateText("");
+    },
+    [revoke],
+  );
+
+  const clearBoth = useCallback(() => {
+    revoke(readyRef.current);
+    fileTicketRef.current.baseline += 1;
+    fileTicketRef.current.candidate += 1;
+    if (fileInputRef.current.baseline) fileInputRef.current.baseline.value = "";
+    if (fileInputRef.current.candidate) fileInputRef.current.candidate.value = "";
+    setBaselineText("");
+    setCandidateText("");
+  }, [revoke]);
+
+  const onFiles = useCallback(
+    (side: Side, files: FileList | null) => {
+      const file = files?.[0] ?? null;
+      // a new selection starts a new input identity for THIS side
+      fileTicketRef.current[side] += 1;
+      revoke(readyRef.current);
+      if (!file) return;
+      const lower = file.name.toLowerCase();
+      if (!lower.endsWith(".sse") && !lower.endsWith(".txt")) {
+        setMessage(t("formatLabel", lang) + ": .sse / .txt");
+        return;
+      }
+      if (file.size > MAX_STREAM_BYTES) {
+        setMessage(t("tooLargeStream", lang));
+        return;
+      }
+      const ticket = ++fileTicketRef.current[side];
+      const rev = compareRevRef.current;
+      const reader = new FileReader();
+      reader.onload = () => {
+        if (!mountedRef.current) return;
+        if (ticket !== fileTicketRef.current[side]) return;
+        if (rev !== compareRevRef.current) return;
+        const bytes = new Uint8Array(reader.result as ArrayBuffer);
+        const text = new TextDecoder().decode(bytes);
+        if (side === "baseline") setBaselineText(text);
+        else setCandidateText(text);
+      };
+      reader.onerror = () => {
+        if (!mountedRef.current) return;
+        if (ticket !== fileTicketRef.current[side]) return;
+        if (rev !== compareRevRef.current) return;
+        setMessage(t("formatLabel", lang) + ": .sse / .txt");
+      };
+      reader.readAsArrayBuffer(file);
+    },
+    [lang, revoke],
   );
 
   // Late language responses obey the current comparison and language.
@@ -160,6 +244,7 @@ export default function StreamCompare({ lang, gated }: Props) {
         if (rev !== compareRevRef.current) return;
         setCard(null);
         setCompareId(null);
+        readyRef.current = false;
         setMessage(
           lang === "zh-CN" ? "结果已失效，请重新比较。" : "The result expired; run the comparison again.",
         );
@@ -182,11 +267,23 @@ export default function StreamCompare({ lang, gated }: Props) {
       setMessage(t("tooLargeStream", lang));
       return;
     }
+    // E02 ordering: an in-flight server revoke settles before this run's
+    // analyses, so they capture the post-revoke compare generation.
+    if (pendingRevokeRef.current) {
+      const pending = pendingRevokeRef.current;
+      pendingRevokeRef.current = null;
+      try {
+        await pending;
+      } catch {
+        /* handled by the revoke error path; the run proceeds fail-closed */
+      }
+    }
     compareRevRef.current += 1;
     const rev = compareRevRef.current;
     if (abortRef.current) abortRef.current.abort();
     const controller = new AbortController();
     abortRef.current = controller;
+    readyRef.current = false;
     setStatus("loading");
     setMessage(null);
     setCard(null);
@@ -200,24 +297,32 @@ export default function StreamCompare({ lang, gated }: Props) {
         "stream", candBytes, null, lang, controller.signal, "candidate",
       );
       if (rev !== compareRevRef.current || !mountedRef.current) return;
+      const runSeq = ++compareSeqRef.current;
       const outcome = await adapter.compareStream(
-        baselineOutcome.result_id, candidateOutcome.result_id, lang, controller.signal,
+        baselineOutcome.result_id, candidateOutcome.result_id, lang, controller.signal, runSeq,
       );
       if (rev !== compareRevRef.current || !mountedRef.current) return;
       setCard(outcome.result as unknown as StreamCompareCard);
       setCompareId(outcome.result_id);
       setInputRevision((r) => r + 1);
+      readyRef.current = true;
       setStatus("ready");
     } catch (error) {
       if (rev !== compareRevRef.current || !mountedRef.current) return;
-      if ((error as Error).name === "AbortError") return;
+      // E01: a superseded/aborted run must leave loading — the button stays
+      // usable and a fresh comparison can start immediately.
+      if ((error as Error).name === "AbortError") {
+        setStatus((prev) => (prev === "loading" ? "empty" : prev));
+        return;
+      }
+      readyRef.current = false;
       if (isSessionError(error)) {
         setMessage(t("sessionExpired", lang));
-      } else if (error instanceof RequestFailed && error.code === "NO_RESULT") {
+      } else if (error instanceof RequestFailed && (error.code === "NO_RESULT" || error.code === "STALE_ANALYSIS")) {
         setMessage(
           lang === "zh-CN"
-            ? "一侧结果已被清除，请重新比较。"
-            : "One side was cleared; run the comparison again.",
+            ? "一侧结果已被撤销，请重新比较。"
+            : "One side was revoked; run the comparison again.",
         );
       } else {
         setMessage(t("networkError", lang));
@@ -231,6 +336,65 @@ export default function StreamCompare({ lang, gated }: Props) {
     (f) => FIELD_LABEL_KEYS[f] !== undefined,
   );
 
+  const sideEditor = (side: Side) => {
+    const value = side === "baseline" ? baselineText : candidateText;
+    const label = side === "baseline" ? t("compareBaselineLabel", lang) : t("compareCandidateLabel", lang);
+    const sampleLabel =
+      side === "baseline" ? t("compareLoadNormalSample", lang) : t("compareLoadErrorSample", lang);
+    const testSuffix = side === "baseline" ? "baseline" : "candidate";
+    return (
+      <div className="compare-side">
+        <label>{label}</label>
+        <textarea
+          aria-label={label}
+          value={value}
+          onChange={(e) => onEdit(side, e.target.value)}
+          rows={8}
+          spellCheck={false}
+          data-testid={`compare-${testSuffix}-input`}
+        />
+        <div className="compare-side-actions">
+          <button
+            className="ghost small"
+            type="button"
+            disabled={gated}
+            onClick={() => fileInputRef.current[side]?.click()}
+            data-testid={`compare-file-${testSuffix}`}
+          >
+            {t("file", lang)}
+          </button>
+          <input
+            ref={(el) => {
+              fileInputRef.current[side] = el;
+            }}
+            type="file"
+            accept=".sse,.txt"
+            hidden
+            onChange={(e) => onFiles(side, e.target.files)}
+          />
+          <button
+            className="ghost small"
+            type="button"
+            disabled={gated}
+            onClick={() => loadSample(side)}
+            data-testid={`compare-sample-${testSuffix}`}
+          >
+            {sampleLabel}
+          </button>
+          <button
+            className="ghost small"
+            type="button"
+            disabled={gated || !value}
+            onClick={() => clearSide(side)}
+            data-testid={`compare-clear-${testSuffix}`}
+          >
+            {t("clearSide", lang)}
+          </button>
+        </div>
+      </div>
+    );
+  };
+
   return (
     <details className="compare-details" data-testid="stream-compare">
       <summary>{t("compareSectionTitle", lang)}</summary>
@@ -241,46 +405,8 @@ export default function StreamCompare({ lang, gated }: Props) {
         </p>
       )}
       <div className="compare-grid">
-        <div className="compare-side">
-          <label>{t("compareBaselineLabel", lang)}</label>
-          <textarea
-            aria-label={t("compareBaselineLabel", lang)}
-            value={baselineText}
-            onChange={(e) => onEdit("baseline", e.target.value)}
-            rows={8}
-            spellCheck={false}
-            data-testid="compare-baseline-input"
-          />
-          <button
-            className="ghost small"
-            type="button"
-            disabled={gated}
-            onClick={() => loadSample("baseline")}
-            data-testid="compare-sample-baseline"
-          >
-            {t("compareLoadNormalSample", lang)}
-          </button>
-        </div>
-        <div className="compare-side">
-          <label>{t("compareCandidateLabel", lang)}</label>
-          <textarea
-            aria-label={t("compareCandidateLabel", lang)}
-            value={candidateText}
-            onChange={(e) => onEdit("candidate", e.target.value)}
-            rows={8}
-            spellCheck={false}
-            data-testid="compare-candidate-input"
-          />
-          <button
-            className="ghost small"
-            type="button"
-            disabled={gated}
-            onClick={() => loadSample("candidate")}
-            data-testid="compare-sample-candidate"
-          >
-            {t("compareLoadErrorSample", lang)}
-          </button>
-        </div>
+        {sideEditor("baseline")}
+        {sideEditor("candidate")}
       </div>
       <div className="input-actions">
         <button
@@ -291,6 +417,15 @@ export default function StreamCompare({ lang, gated }: Props) {
           data-testid="compare-run"
         >
           {status === "loading" ? t("compareRunning", lang) : t("compareRun", lang)}
+        </button>
+        <button
+          className="ghost"
+          type="button"
+          disabled={gated || (!baselineText && !candidateText && status === "empty")}
+          onClick={clearBoth}
+          data-testid="compare-clear-both"
+        >
+          {t("compareClearBoth", lang)}
         </button>
       </div>
       {status !== "ready" && message && (

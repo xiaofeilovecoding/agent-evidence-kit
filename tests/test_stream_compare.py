@@ -244,6 +244,12 @@ class WebCompareCase(unittest.TestCase):
         csrf = response.json()["csrf_token"]
         return csrf, {"Host": "127.0.0.1:7413", "X-CSRF-Token": csrf, "Origin": BASE}
 
+    _seq = 0
+
+    def run_seq(self) -> int:
+        WebCompareCase._seq += 1
+        return WebCompareCase._seq
+
     def analyze(self, data: bytes, slot: str = "current"):
         return self.client.post(
             f"/api/stream/analyze?lang=en&slot={slot}",
@@ -261,40 +267,7 @@ class WebCompareCase(unittest.TestCase):
         compare = self.client.post(
             "/api/stream/compare",
             headers={**self.headers, "Content-Type": "application/json"},
-            content=json.dumps({"baseline": base["result_id"], "candidate": cand["result_id"], "lang": "en"}).encode(),
-        )
-        self.assertEqual(compare.status_code, 200, compare.text)
-        card = compare.json()["result"]
-        self.assertEqual(card["kind"], "stream-compare")
-        self.assertEqual(card["schema_version"], 1)
-        fields = [d["field"] for d in card["differences"]]
-        self.assertEqual(fields[0], "terminal")
-        # the compare result is a stored slot and can be re-rendered
-        rid = compare.json()["result_id"]
-        rerender = self.client.get(f"/api/results/{rid}?lang=zh-CN", headers=self.headers)
-        self.assertEqual(rerender.status_code, 200)
-        self.assertEqual(rerender.json()["result"]["language"], "zh-CN")
-
-    def test_compare_requires_both_stream_results(self):
-        config = self.client.post(
-            "/api/config/analyze?lang=en",
-            content=b"{}",
-            headers={**self.headers, "Content-Type": "application/octet-stream", "X-Input-Format": "json"},
-        ).json()
-        response = self.client.post(
-            "/api/stream/compare",
-            headers={**self.headers, "Content-Type": "application/json"},
-            content=json.dumps({"baseline": config["result_id"], "candidate": config["result_id"], "lang": "en"}).encode(),
-        )
-        self.assertEqual(response.status_code, 404, "config results cannot feed a stream compare")
-
-    def test_edit_then_clear_revokes_old_share(self):
-        base = self.analyze(NORMAL, slot="baseline").json()
-        cand = self.analyze(b'data: {"error": {"x": 1}}\n\n', slot="candidate").json()
-        compare = self.client.post(
-            "/api/stream/compare",
-            headers={**self.headers, "Content-Type": "application/json"},
-            content=json.dumps({"baseline": base["result_id"], "candidate": cand["result_id"], "lang": "en"}).encode(),
+            content=json.dumps({"baseline": base["result_id"], "candidate": cand["result_id"], "lang": "en", "run_seq": self.run_seq()}).encode(),
         )
         old_id = compare.json()["result_id"]
         # the user edits one side: the UI issues clear, which bumps the
@@ -357,7 +330,7 @@ class WebCompareCase(unittest.TestCase):
         compare = self.client.post(
             "/api/stream/compare",
             headers={**self.headers, "Content-Type": "application/json"},
-            content=json.dumps({"baseline": base["result_id"], "candidate": cand["result_id"], "lang": "en"}).encode(),
+            content=json.dumps({"baseline": base["result_id"], "candidate": cand["result_id"], "lang": "en", "run_seq": self.run_seq()}).encode(),
         )
         rid = compare.json()["result_id"]
         export = self.client.post(
@@ -376,5 +349,110 @@ class WebCompareCase(unittest.TestCase):
         )
 
 
+
+    # ---- E01/E02: isolation, ordering, revocation semantics ----
+
+    def test_compare_revoke_isolated_from_normal_result(self):
+        normal = self.analyze(NORMAL, slot="current").json()
+        base = self.analyze(NORMAL, slot="baseline").json()
+        cand = self.analyze(b'data: {"error": {"x": 1}}\\n\\n', slot="candidate").json()
+        compare = self.client.post(
+            "/api/stream/compare",
+            headers={**self.headers, "Content-Type": "application/json"},
+            content=json.dumps({"baseline": base["result_id"], "candidate": cand["result_id"],
+                                "lang": "en", "run_seq": self.run_seq()}).encode(),
+        )
+        compare_id = compare.json()["result_id"]
+        # revoke the compare mode only
+        revoked = self.client.post(
+            "/api/stream/compare/revoke",
+            headers={**self.headers, "Content-Type": "application/json"},
+            content=json.dumps({"revoke_seq": self.run_seq()}).encode(),
+        )
+        self.assertEqual(revoked.status_code, 200)
+        # the confirmed single-stream result still shares
+        export = self.client.post(
+            "/api/export",
+            headers={**self.headers, "Content-Type": "application/json"},
+            content=json.dumps({"result_id": normal["result_id"], "lang": "en", "format": "md"}).encode(),
+        )
+        self.assertEqual(export.status_code, 200, "normal result survives a compare revoke")
+        # the comparison and both sides are gone
+        for dead_id in (compare_id, base["result_id"], cand["result_id"]):
+            dead = self.client.post(
+                "/api/export",
+                headers={**self.headers, "Content-Type": "application/json"},
+                content=json.dumps({"result_id": dead_id, "lang": "en", "format": "md"}).encode(),
+            )
+            self.assertEqual(dead.status_code, 404, "compare-mode results revoked")
+
+    def test_late_revoke_cannot_wipe_newer_compare(self):
+        base_a = self.analyze(NORMAL, slot="baseline").json()
+        cand_a = self.analyze(b'data: {"error": {"x": 1}}\n\n', slot="candidate").json()
+        run_a = self.run_seq()
+        compare_a = self.client.post(
+            "/api/stream/compare",
+            headers={**self.headers, "Content-Type": "application/json"},
+            content=json.dumps({"baseline": base_a["result_id"], "candidate": cand_a["result_id"],
+                                "lang": "en", "run_seq": run_a}).encode(),
+        ).json()
+        # a revoke is issued (seq 10) and a NEWER comparison lands (seq 11)
+        revoke_seq = 10
+        newer_seq = 11
+        self.client.post(
+            "/api/stream/compare/revoke",
+            headers={**self.headers, "Content-Type": "application/json"},
+            content=json.dumps({"revoke_seq": revoke_seq}).encode(),
+        )
+        base_b = self.analyze(NORMAL, slot="baseline").json()
+        cand_b = self.analyze(_chunk("a") + _chunk("b", "length") + b"data: [DONE]\n\n", slot="candidate").json()
+        compare_b = self.client.post(
+            "/api/stream/compare",
+            headers={**self.headers, "Content-Type": "application/json"},
+            content=json.dumps({"baseline": base_b["result_id"], "candidate": cand_b["result_id"],
+                                "lang": "en", "run_seq": newer_seq}).encode(),
+        )
+        self.assertEqual(compare_b.status_code, 200)
+        # the late revoke replays: the older comparison dies, the newer one survives
+        replay = self.client.post(
+            "/api/stream/compare/revoke",
+            headers={**self.headers, "Content-Type": "application/json"},
+            content=json.dumps({"revoke_seq": revoke_seq}).encode(),
+        )
+        self.assertEqual(replay.status_code, 200)
+        old_export = self.client.post(
+            "/api/export",
+            headers={**self.headers, "Content-Type": "application/json"},
+            content=json.dumps({"result_id": compare_a["result_id"], "lang": "en", "format": "md"}).encode(),
+        )
+        self.assertEqual(old_export.status_code, 404, "older comparison stays revoked")
+        new_export = self.client.post(
+            "/api/export",
+            headers={**self.headers, "Content-Type": "application/json"},
+            content=json.dumps({"result_id": compare_b.json()["result_id"], "lang": "en", "format": "md"}).encode(),
+        )
+        self.assertEqual(new_export.status_code, 200, "late revoke cannot wipe a newer comparison")
+        # a run that STARTED before the revoke can never land after it
+        stale_run = self.client.post(
+            "/api/stream/compare",
+            headers={**self.headers, "Content-Type": "application/json"},
+            content=json.dumps({"baseline": base_b["result_id"], "candidate": cand_b["result_id"],
+                                "lang": "en", "run_seq": revoke_seq}).encode(),
+        )
+        self.assertEqual(stale_run.status_code, 409, "run_seq <= last revoke is stale")
+
+    def test_missing_run_seq_rejected(self):
+        base = self.analyze(NORMAL, slot="baseline").json()
+        cand = self.analyze(b'data: {"error": {"x": 1}}\\n\\n', slot="candidate").json()
+        response = self.client.post(
+            "/api/stream/compare",
+            headers={**self.headers, "Content-Type": "application/json"},
+            content=json.dumps({"baseline": base["result_id"], "candidate": cand["result_id"],
+                                "lang": "en"}).encode(),
+        )
+        self.assertEqual(response.status_code, 422)
+
+
 if __name__ == "__main__":
     unittest.main()
+

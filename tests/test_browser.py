@@ -687,6 +687,38 @@ class BrowserJourney(unittest.TestCase):
         share = compare.locator(".share-block, .export-block")
         self.assertEqual(share.count(), 0, "no share affordance for the revoked comparison")
         self.page.unroute("**/api/stream/compare")
+        # E01: the run button left loading — a fresh comparison can start
+        # immediately and the new result is shareable
+        run_btn = compare.locator('[data-testid="compare-run"]')
+        self.assertTrue(run_btn.is_enabled(), "run button usable after the stale race")
+        run_btn.click()
+        compare.locator('[data-testid="compare-result"]').wait_for(timeout=15000)
+        new_share = compare.locator(".share-block, .export-block")
+        self.assertEqual(new_share.count(), 1, "the new comparison is shareable")
+        self.assertEqual(self.console_errors, [])
+
+    def test_compare_side_clear_and_both_clear(self):
+        """E02: per-side clear empties only that side; the combined clear
+        empties both; the two sides keep distinct file/clear controls."""
+        self.open_stream_paste()
+        compare = self.view("stream").locator('[data-testid="stream-compare"]')
+        compare.locator("summary").click()
+        compare.get_by_role("button", name="载入正常样例 → 基线").click()
+        compare.get_by_role("button", name="载入上游错误样例 → 候选").click()
+        base_box = compare.locator('[data-testid="compare-baseline-input"]')
+        cand_box = compare.locator('[data-testid="compare-candidate-input"]')
+        self.assertNotEqual(base_box.input_value(), "")
+        self.assertNotEqual(cand_box.input_value(), "")
+        # per-side clear touches only that side
+        compare.locator('[data-testid="compare-clear-baseline"]').click()
+        self.assertEqual(base_box.input_value(), "", "baseline cleared alone")
+        self.assertNotEqual(cand_box.input_value(), "", "candidate untouched")
+        compare.locator('[data-testid="compare-clear-candidate"]').click()
+        self.assertEqual(cand_box.input_value(), "", "candidate cleared alone")
+        # distinct file controls exist per side
+        self.assertEqual(compare.locator('[data-testid="compare-file-baseline"]').count(), 1)
+        self.assertEqual(compare.locator('[data-testid="compare-file-candidate"]').count(), 1)
+        self.assertEqual(self.console_errors, [])
 
 
 if __name__ == "__main__":
