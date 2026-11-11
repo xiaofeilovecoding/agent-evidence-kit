@@ -101,6 +101,43 @@ const STRINGS = {
   events: { "zh-CN": "事件数", en: "events" },
   usageSeen: { "zh-CN": "usage出现", en: "usage seen" },
   compareTitle: { "zh-CN": "与正常样例对照", en: "Compare with normal sample" },
+  // stream compare (baseline vs candidate)
+  compareSectionTitle: { "zh-CN": "正常 vs 异常比较", en: "Baseline vs candidate compare" },
+  compareSectionHint: {
+    "zh-CN": "展开后输入两侧捕获流：基线（正常）与候选（待比较）。比较只读取结构投影。",
+    en: "Expand and provide both captured streams: baseline (normal) and candidate. The comparison reads structure projections only.",
+  },
+  compareBaselineLabel: { "zh-CN": "基线（正常）", en: "Baseline (normal)" },
+  compareCandidateLabel: { "zh-CN": "候选（待比较）", en: "Candidate (to compare)" },
+  compareLoadNormalSample: { "zh-CN": "载入正常样例 → 基线", en: "Load normal sample → baseline" },
+  compareLoadErrorSample: { "zh-CN": "载入上游错误样例 → 候选", en: "Load upstream-error sample → candidate" },
+  compareRun: { "zh-CN": "比较两侧", en: "Compare both sides" },
+  compareRunning: { "zh-CN": "比较中…", en: "Comparing…" },
+  compareNeedsBoth: {
+    "zh-CN": "需要两侧输入（粘贴或载入样例）后才能比较。",
+    en: "Provide both sides (paste or load a sample) before comparing.",
+  },
+  compareRevoked: {
+    "zh-CN": "任一侧修改后旧比较与分享立即失效。",
+    en: "Editing either side immediately revokes the previous comparison and share.",
+  },
+  compareDiffTitle: { "zh-CN": "观察差异（终态优先）", en: "Observed differences (terminal first)" },
+  compareSameTitle: { "zh-CN": "两侧一致", en: "Equal on both sides" },
+  compareTerminal: { "zh-CN": "终态", en: "Terminal state" },
+  compareVerdict: { "zh-CN": "判定", en: "Verdict" },
+  compareFinishReason: { "zh-CN": "finish_reason", en: "finish_reason" },
+  compareDoneSeen: { "zh-CN": "是否见 [DONE]", en: "[DONE] seen" },
+  compareTerminalIndex: { "zh-CN": "终态事件位置", en: "Terminal event index" },
+  compareDiagCodes: { "zh-CN": "诊断代码", en: "Diagnostic codes" },
+  compareEventCount: { "zh-CN": "事件数", en: "Event count" },
+  compareNote: {
+    "zh-CN": "以上为观察差异；本比较不证明上游根因。",
+    en: "Observed differences only; this comparison does not prove upstream root causes.",
+  },
+  compareShowcaseNote: {
+    "zh-CN": "静态展示页不支持比较；请在本地 CLI 或 Web 应用中使用。",
+    en: "The static showcase cannot run comparisons; use the local CLI or web app.",
+  },
   compareCurrent: { "zh-CN": "当前结果", en: "Current" },
   compareNormal: { "zh-CN": "正常样例", en: "Normal sample" },
   normalReference: {

@@ -1406,3 +1406,17 @@ h3 {
     min-height: 44px;
   }
 }
+
+/* stream compare (baseline vs candidate) */
+.compare-details{border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin-top:10px}
+.compare-details summary{cursor:pointer;font-weight:650}
+.compare-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:8px}
+.compare-side{display:grid;gap:6px;min-width:0}
+.compare-side label{font-size:13px;font-weight:650}
+.compare-side textarea{font-family:ui-monospace,Consolas,monospace;font-size:12px;width:100%;padding:8px;border:1px solid var(--line);border-radius:8px;background:var(--surface);color:var(--text);resize:vertical}
+.compare-result{margin-top:10px;border-top:1px dashed var(--line);padding-top:8px}
+.compare-diff-list{list-style:none;margin:6px 0;padding:0;display:grid;gap:6px;font-size:13px}
+.compare-diff-row{display:flex;flex-direction:column;gap:2px;border:1px solid var(--line);border-radius:8px;padding:7px 9px}
+.compare-field{font-weight:650}
+.compare-value{font-family:ui-monospace,Consolas,monospace;font-size:12px;overflow-wrap:anywhere}
+@media(max-width:767px){.compare-grid{grid-template-columns:1fr}}

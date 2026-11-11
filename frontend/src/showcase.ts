@@ -70,6 +70,11 @@ export function createShowcaseAdapter(): DataAdapter {
     async analyzeBytes(): Promise<AnalysisOutcome> {
       throw new Error("showcase accepts no personal input");
     },
+    async compareStream(): Promise<AnalysisOutcome> {
+      // E4: the static showcase cannot run comparisons; the UI directs users
+      // to the local CLI / web app for the baseline-vs-candidate compare.
+      throw new Error("compare is available in the local CLI / web app, not in the static showcase");
+    },
     async rerender(resultId: string, lang: Lang): Promise<Card> {
       const entry = find(resultId.replace(/^sample-/, ""));
       return entry.results[lang].card;

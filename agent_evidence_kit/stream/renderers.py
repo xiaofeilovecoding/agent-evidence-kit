@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from ..next_steps import NEXT_STEPS_SCHEMA_VERSION, next_steps_for
 from . import PROFILE
+from .compare import COMPARE_SCHEMA_VERSION, NOTE, _diagnostic_codes
 
 SCHEMA_VERSION = 2
 LANGUAGES = ("zh-CN", "en")
@@ -239,3 +240,148 @@ def _render_markdown(core: dict, language: str) -> str:
         lines.append(f"- #{entry['index']} {kind}{suffix}")
     lines.append("")
     return "\n".join(lines)
+
+
+# ---- stream compare (normal vs abnormal) ----
+
+_COMPARE_FIELD_LABELS = {
+    "terminal": {"zh-CN": "终态", "en": "Terminal state"},
+    "verdict": {"zh-CN": "判定", "en": "Verdict"},
+    "finish_reason": {"zh-CN": "finish_reason（受控枚举）", "en": "finish_reason (controlled enum)"},
+    "done_seen": {"zh-CN": "是否见 [DONE]", "en": "[DONE] seen"},
+    "terminal_event_index": {"zh-CN": "终态事件位置", "en": "Terminal event index"},
+    "diagnostic_codes": {"zh-CN": "诊断代码", "en": "Diagnostic codes"},
+    "event_count": {"zh-CN": "事件数", "en": "Event count"},
+}
+
+_COMPARE_SIDE_LABELS = {
+    "baseline": {"zh-CN": "基线（正常）", "en": "Baseline"},
+    "candidate": {"zh-CN": "候选（待比较）", "en": "Candidate"},
+}
+
+_COMPARE_NOTE_TEXT = {
+    "zh-CN": "以上为两侧捕获流之间的观察差异；本比较不证明上游根因。",
+    "en": "The differences above are observations between the two captured streams; this comparison does not prove upstream root causes.",
+}
+
+_COMPARE_TITLE = {
+    "zh-CN": "流结束比较：正常 vs 异常",
+    "en": "Stream end comparison: baseline vs candidate",
+}
+
+_COMPARE_TERMINAL_SECTION = {
+    "zh-CN": "终态差异",
+    "en": "Terminal differences",
+}
+
+_COMPARE_DIAG_SECTION = {
+    "zh-CN": "诊断差异（逐步展开）",
+    "en": "Diagnostic differences (expanded)",
+}
+
+_COMPARE_SAME_SECTION = {
+    "zh-CN": "两侧一致的字段",
+    "en": "Fields equal on both sides",
+}
+
+
+def render_compare_card(core: dict, language: str, output_format: str) -> dict | str:
+    """Renders a comparison core (kind=stream-compare) as localized JSON/MD."""
+    if output_format == "json":
+        card = dict(core)
+        card["language"] = language
+        card["note_text"] = _COMPARE_NOTE_TEXT[language]
+        card["note"] = NOTE
+        return card
+    return _render_compare_markdown(core, language)
+
+
+def _format_value(field: str, value: object, language: str) -> str:
+    if field == "done_seen":
+        return ("有" if value else "无") if language == "zh-CN" else ("yes" if value else "none")
+    if field == "terminal_event_index":
+        return (
+            ("未观察到" if value is None else f"@event{value}")
+            if language == "zh-CN"
+            else ("not observed" if value is None else f"@event{value}")
+        )
+    if field == "diagnostic_codes":
+        codes = value or []
+        return ", ".join(codes) if codes else ("—" if language == "zh-CN" else "none")
+    if field == "finish_reason" and value == "none":
+        return "none（未观察到 finish）" if language == "zh-CN" else "none (no finish observed)"
+    return "—" if value is None else str(value)
+
+
+def _render_compare_markdown(core: dict, language: str) -> str:
+    is_zh = language == "zh-CN"
+    lines: list[str] = []
+    lines.append(f"# {_COMPARE_TITLE[language]}")
+    lines.append("")
+    for side in ("baseline", "candidate"):
+        label = _COMPARE_SIDE_LABELS[side][language]
+        s = core[side]
+        lines.append(
+            f"- {label}: {_format_value('terminal', s['terminal'], language)}"
+            f" · {_COMPARE_FIELD_LABELS['finish_reason'][language]}: {_format_value('finish_reason', s['finish_reason'], language)}"
+            f" · {_COMPARE_FIELD_LABELS['done_seen'][language]}: {_format_value('done_seen', s['done_seen'], language)}"
+        )
+    lines.append("")
+
+    lines.append(f"## {_COMPARE_TERMINAL_SECTION[language]}")
+    lines.append("")
+    terminal_diffs = [d for d in core["differences"] if d["field"] in ("terminal", "verdict")]
+    if not terminal_diffs:
+        lines.append(
+            "- 终态一致。" if is_zh else "- Terminal states are equal."
+        )
+    for d in terminal_diffs:
+        label = _COMPARE_FIELD_LABELS[d["field"]][language]
+        lines.append(
+            f"- **{label}**: {d['baseline']} → {d['candidate']}"
+        )
+        # explain both terminal codes with the fixed single-card explanations
+        for v in (d["baseline"], d["candidate"]):
+            if isinstance(v, str) and v in EXPLANATIONS:
+                lines.append(f"  - {v}: {_explanation(v, language)}")
+    lines.append("")
+
+    other_diffs = [d for d in core["differences"] if d["field"] not in ("terminal", "verdict")]
+    lines.append(f"## {_COMPARE_DIAG_SECTION[language]}")
+    lines.append("")
+    if not other_diffs:
+        lines.append("- 无其他差异。" if is_zh else "- No other differences.")
+    for d in other_diffs:
+        label = _COMPARE_FIELD_LABELS[d["field"]][language]
+        lines.append(f"- **{label}**: {_format_value(d['field'], d['baseline'], language)} → {_format_value(d['field'], d['candidate'], language)}")
+        if d["field"] == "diagnostic_codes":
+            base_codes = set(_diagnostic_codes(core["baseline"]))
+            cand_codes = set(_diagnostic_codes(core["candidate"]))
+            for code in sorted((base_codes | cand_codes) & set(EXPLANATIONS)):
+                side_tag = (
+                    "基线" if (code in base_codes and code not in cand_codes)
+                    else "候选" if (code in cand_codes and code not in base_codes)
+                    else "两侧"
+                ) if is_zh else (
+                    "baseline" if (code in base_codes and code not in cand_codes)
+                    else "candidate" if (code in cand_codes and code not in base_codes)
+                    else "both"
+                )
+                lines.append(f"  - [{side_tag}] {code}: {_explanation(code, language)}")
+                steps = next_steps_for(code, language)
+                lines.append(f"    - {_NEXT_LABEL[language]}: {steps['next_steps']}")
+                lines.append(
+                    f"    - {_CANNOT_PROVE_LABEL[language]}: {steps['does_not_prove']}"
+                )
+    lines.append("")
+
+    same = core.get("same_fields", [])
+    if same:
+        labels = "、".join(_COMPARE_FIELD_LABELS[f][language] for f in same if f in _COMPARE_FIELD_LABELS)
+        lines.append(f"## {_COMPARE_SAME_SECTION[language]}")
+        lines.append("")
+        lines.append(f"- {labels}")
+        lines.append("")
+    lines.append(f"> {_COMPARE_NOTE_TEXT[language]}")
+    lines.append("")
+    return chr(10).join(lines)

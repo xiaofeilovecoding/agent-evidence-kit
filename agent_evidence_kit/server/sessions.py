@@ -25,6 +25,9 @@ COOKIE_NAME = "aek_session"
 CSRF_HEADER = "X-CSRF-Token"
 
 MODULES = ("config", "stream")
+# The stream module keeps single-analysis plus compare-mode slots
+# (current / baseline / candidate / compare) under the same projection cap.
+MAX_SLOTS_PER_MODULE_STREAM = 4
 MAX_BODY_BYTES = 8 * 1024 * 1024
 
 

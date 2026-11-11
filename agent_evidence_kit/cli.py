@@ -21,7 +21,9 @@ from .config.renderers import render_card as render_config_card
 from .stream.renderers import render_card as render_stream_card
 from .demos import STREAM_DEMO_BYTES
 from .stream.analysis import analyze_bytes as stream_analyze_bytes
+from .stream.compare import compare_projections
 from .stream.diagnostics import EXIT_CODES
+from .stream.renderers import render_compare_card
 
 USAGE = (
     "usage: python -m agent_evidence_kit config --input <config.json|config.toml> "
@@ -29,8 +31,14 @@ USAGE = (
     "       python -m agent_evidence_kit stream --input <capture.sse|capture.txt> "
     "[--format json|md] [--lang zh-CN|en] [--chunk-bytes 1-65536]\n"
     "       python -m agent_evidence_kit stream demo --case <name> [same output options]\n"
-    "       python -m agent_evidence_kit web [--port N] [--no-open]"
+    "       python -m agent_evidence_kit stream compare --baseline <normal.sse> "
+    "--candidate <failed.sse> [--format json|md] [--lang zh-CN|en] [--chunk-bytes 1-65536]\n"
+    "       python -m agent_evidence_kit web [--port N] [--no-open]\n"
+    "compare exit codes: 0 = no observed differences, 1 = differences observed, "
+    "2 = invalid input on either side"
 )
+
+NL_REAL = chr(10)
 
 _EXIT_ERROR = 2
 _EXIT_FINDINGS = 1
@@ -209,9 +217,73 @@ def _run_stream_demo(argv: list[str]) -> int:
     return _stream_exit_code(core)
 
 
+def _read_stream_input(path: str, chunk: int):
+    """Reads one stream input through the existing bounded pipeline."""
+    ext = os.path.splitext(path)[1].lower()
+    if ext not in STREAM_EXTENSIONS:
+        raise StreamInputRejected("INPUT_UNREADABLE")
+    with open(path, "rb") as handle:
+        from .stream.analysis import analyze_chunks
+
+        return analyze_chunks(iter(lambda: handle.read(chunk), b""))
+
+
+def _run_stream_compare(argv: list[str]) -> int:
+    if "--help" in argv or "-h" in argv:
+        print(USAGE)
+        return _EXIT_OK
+    out = {"format": "json", "lang": "zh-CN", "chunk": 4096}
+    baseline_path = None
+    candidate_path = None
+    rest: list[str] = []
+    i = 0
+    while i < len(argv):
+        if argv[i] == "--baseline":
+            if i + 1 >= len(argv):
+                return _arg_error("--baseline requires a value")
+            baseline_path = argv[i + 1]
+            i += 2
+            continue
+        if argv[i] == "--candidate":
+            if i + 1 >= len(argv):
+                return _arg_error("--candidate requires a value")
+            candidate_path = argv[i + 1]
+            i += 2
+            continue
+        rest.append(argv[i])
+        i += 1
+    if baseline_path is None or candidate_path is None:
+        return _arg_error("--baseline and --candidate are both required for compare")
+    status = _collect_output_args(rest, out)
+    if status is not None:
+        return status
+    try:
+        baseline_core = _read_stream_input(baseline_path, out["chunk"])
+        candidate_core = _read_stream_input(candidate_path, out["chunk"])
+    except (ConfigInputRejected, StreamInputRejected) as rejected:
+        _emit({"error": rejected.code}, out["format"], out["lang"], rejected.code, "stream")
+        return _EXIT_ERROR
+    except OSError:
+        _emit({"error": "INPUT_UNREADABLE"}, out["format"], out["lang"], "INPUT_UNREADABLE", "stream")
+        return _EXIT_ERROR
+    # An invalid-input side (error cores) compares as its error projection.
+    compare_core = compare_projections(baseline_core, candidate_core)
+    card = render_compare_card(compare_core, out["lang"], out["format"])
+    if out["format"] == "json":
+        print(json.dumps(card, ensure_ascii=False, indent=2))
+    else:
+        print(card, end="" if card.endswith(NL_REAL) else NL_REAL)
+    invalid = "error" in baseline_core or "error" in candidate_core
+    if invalid:
+        return _EXIT_ERROR
+    return _EXIT_FINDINGS if compare_core["differences"] else _EXIT_OK
+
+
 def _run_stream(argv: list[str]) -> int:
     if argv and argv[0] == "demo":
         return _run_stream_demo(argv[1:])
+    if argv and argv[0] == "compare":
+        return _run_stream_compare(argv[1:])
     return _run_stream_inspect(argv)
 
 

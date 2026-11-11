@@ -31,9 +31,11 @@ from ..demos import (
 )
 from ..stream.analysis import analyze_bytes as stream_analyze_bytes
 from ..stream.analysis import analyze_chunks as stream_analyze_chunks
+from ..stream.compare import compare_projections
 from ..stream.parsers import InputRejected as StreamInputRejected
 from ..stream.parsers import MAX_INPUT_BYTES as STREAM_MAX_INPUT_BYTES
 from ..stream.renderers import render_card as render_stream_card
+from ..stream.renderers import render_compare_card
 from .sessions import (
     COOKIE_NAME,
     CSRF_HEADER,
@@ -41,6 +43,7 @@ from .sessions import (
     SESSION_COOKIE_MAX_AGE,
     MAX_CONCURRENT_ANALYSES,
     MAX_SLOTS_PER_MODULE,
+    MAX_SLOTS_PER_MODULE_STREAM,
     MAX_TOTAL_PROJECTION_BYTES,
     MODULES,
     HttpError,
@@ -257,10 +260,7 @@ def create_app(store: SessionStore | None = None,
         if lang not in LANGUAGES:
             raise HttpError(422, "BAD_LANGUAGE")
         module, slot = _owned_result(session, result_id)
-        if module == "config":
-            card = render_config_card(slot.core, lang, "json")
-        else:
-            card = render_stream_card(slot.core, lang, "json")
+        card = _render_slot_card(slot.core, module, lang, "json")
         return {
             "result_id": slot.result_id,
             "revision": slot.revision,
@@ -289,6 +289,9 @@ def create_app(store: SessionStore | None = None,
         if module == "config":
             card = render_config_card(slot.core, lang, export_format)
             base = "config-evidence-card"
+        elif isinstance(slot.core, dict) and slot.core.get("kind") == "stream-compare":
+            card = render_compare_card(slot.core, lang, export_format)
+            base = "stream-compare-report"
         else:
             card = render_stream_card(slot.core, lang, export_format)
             base = "stream-evidence-report"
@@ -337,8 +340,8 @@ def create_app(store: SessionStore | None = None,
                 cards["config"] = render_config_card(slot.core, lang, "json")
                 markdown_parts["config"] = render_config_card(slot.core, lang, "md")
             else:
-                cards["stream"] = render_stream_card(slot.core, lang, "json")
-                markdown_parts["stream"] = render_stream_card(slot.core, lang, "md")
+                cards["stream"] = _render_slot_card(slot.core, module, lang, "json")
+                markdown_parts["stream"] = _render_slot_card(slot.core, module, lang, "md")
         is_zh = lang == "zh-CN"
         limitations = []
         if "config" in cards:
@@ -482,7 +485,7 @@ def create_app(store: SessionStore | None = None,
     # ---- stream module endpoints ----
 
     @app.post("/api/stream/analyze")
-    async def stream_analyze(request: Request, lang: str = "zh-CN"):
+    async def stream_analyze(request: Request, lang: str = "zh-CN", slot: str = "current"):
         host = _check_host(request)
         session = _session_from_cookie(request)
         _require_exact_origin(request, host)
@@ -490,6 +493,8 @@ def create_app(store: SessionStore | None = None,
         _check_content_type(request, "application/octet-stream")
         if lang not in LANGUAGES:
             raise HttpError(422, "BAD_LANGUAGE")
+        if slot not in ("current", "baseline", "candidate"):
+            raise HttpError(422, "BAD_SLOT")
         # C02: capture the generation BEFORE reading the body (see above).
         with session.lock:
             if session.in_flight >= MAX_CONCURRENT_ANALYSES:
@@ -499,10 +504,38 @@ def create_app(store: SessionStore | None = None,
         try:
             body = await _read_body_limited(request)
             return _run_stream_analysis(session, generation, body, lang,
-                                        "current", projection_limit)
+                                        slot, projection_limit)
         finally:
             with session.lock:
                 session.in_flight -= 1
+
+    @app.post("/api/stream/compare")
+    async def stream_compare(request: Request):
+        host = _check_host(request)
+        session = _session_from_cookie(request)
+        _require_exact_origin(request, host)
+        _require_csrf(request, session)
+        _check_content_type(request, "application/json")
+        payload = await _read_json_payload(request)
+        baseline_id = payload.get("baseline")
+        candidate_id = payload.get("candidate")
+        lang = payload.get("lang")
+        if not isinstance(baseline_id, str) or not isinstance(candidate_id, str):
+            raise HttpError(422, "BAD_JSON")
+        if lang not in LANGUAGES:
+            raise HttpError(422, "BAD_LANGUAGE")
+        # The comparison reads ONLY the two stored projections. Both must
+        # belong to the CURRENT stream generation: a clear() between the
+        # side analyses and this call invalidates the whole comparison.
+        with session.lock:
+            generation = session.generation["stream"]
+        baseline_module, baseline_slot = _owned_result(session, baseline_id)
+        candidate_module, candidate_slot = _owned_result(session, candidate_id)
+        if baseline_module != "stream" or candidate_module != "stream":
+            raise HttpError(404, "NO_RESULT")
+        compare_core = compare_projections(baseline_slot.core, candidate_slot.core)
+        return _land_result(session, "stream", generation, "compare",
+                            compare_core, lang, projection_limit)
 
     @app.post("/api/stream/demo")
     async def stream_demo(request: Request):
@@ -584,16 +617,16 @@ def _land_result(session, module: str, generation: int, slot_name: str,
         revision = session.revision
         result_id = secrets.token_urlsafe(16)
         session.slots[module][slot_name] = _make_slot(result_id, core, revision, size)
-        while len(session.slots[module]) > MAX_SLOTS_PER_MODULE:
+        slot_cap = (
+            MAX_SLOTS_PER_MODULE_STREAM if module == "stream" else MAX_SLOTS_PER_MODULE
+        )
+        while len(session.slots[module]) > slot_cap:
             oldest = min(
                 session.slots[module],
                 key=lambda k: session.slots[module][k].revision,
             )
             del session.slots[module][oldest]
-    if module == "config":
-        card = render_config_card(core, language, "json")
-    else:
-        card = render_stream_card(core, language, "json")
+    card = _render_slot_card(core, module, language, "json")
     return {
         "result_id": result_id,
         "revision": revision,
@@ -607,3 +640,12 @@ def _make_slot(result_id: str, core: dict, revision: int, size: int):
     from .sessions import _Slot
 
     return _Slot(result_id, core, revision, size)
+
+
+def _render_slot_card(core: dict, module: str, lang: str, output_format: str):
+    """Renders a stored slot core; comparison cores render as comparisons."""
+    if module == "config":
+        return render_config_card(core, lang, output_format)
+    if isinstance(core, dict) and core.get("kind") == "stream-compare":
+        return render_compare_card(core, lang, output_format)
+    return render_stream_card(core, lang, output_format)

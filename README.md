@@ -79,6 +79,52 @@ python -m agent_evidence_kit stream --input capture.sse --format json
 python -m agent_evidence_kit stream demo --case finish-only
 ```
 
+## Compare a healthy stream against a failing one
+
+Two captured streams, one command — the comparison shows what actually
+differed between them, terminal evidence first:
+
+```bash
+python -m agent_evidence_kit stream compare --baseline normal.sse --candidate failed.sse --format md
+```
+
+Real output for two synthetic captures (a normal termination vs an upstream
+error; exit code 1 because differences were observed):
+
+```markdown
+# Stream end comparison: baseline vs candidate
+
+- Baseline: NORMAL_TERMINATION · finish_reason (controlled enum): stop · [DONE] seen: yes
+- Candidate: UPSTREAM_ERROR · finish_reason (controlled enum): none (no finish observed) · [DONE] seen: none
+
+## Terminal differences
+
+- **Terminal state**: NORMAL_TERMINATION → UPSTREAM_ERROR
+  - NORMAL_TERMINATION: A normal finish was observed and [DONE] was received: terminal evidence is complete for this profile. This does not prove the answer is correct or complete.
+  - UPSTREAM_ERROR: The stream contains an upstream error event (the error body is never echoed).
+- **Verdict**: NORMAL_TERMINATION → NEEDS_REVIEW
+
+## Diagnostic differences (expanded)
+
+- **finish_reason (controlled enum)**: stop → none (no finish observed)
+- **[DONE] seen**: yes → none
+- **Terminal event index**: @event2 → not observed
+- **Diagnostic codes**: NORMAL_TERMINATION → UPSTREAM_ERROR
+  - [candidate] UPSTREAM_ERROR: The stream contains an upstream error event (the error body is never echoed).
+- **Event count**: 4 → 2
+
+> The differences above are observations between the two captured streams; this comparison does not prove upstream root causes.
+```
+
+The comparison reads the two structure projections only: event data,
+generated text, tool arguments, unknown reason text, addresses, session
+ids and file names never enter the output, and an unknown `finish_reason`
+is bucketed to `other` instead of being echoed. The web UI has the same
+comparison on the Stream page (expand "Baseline vs candidate compare",
+paste both sides or load the two synthetic samples, then compare and
+share); the static showcase pages keep showing single-sample cards and
+label the comparison as available in the local CLI / web app.
+
 ## Three problems it answers
 
 1. **"My config changed and a service broke"** — check the config for

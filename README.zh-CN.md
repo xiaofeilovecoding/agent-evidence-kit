@@ -55,6 +55,43 @@ python -m agent_evidence_kit stream --input capture.sse --format json
 python -m agent_evidence_kit stream demo --case finish-only
 ```
 
+## 把正常流和异常流放在一起比较
+
+两份捕获流，一条命令——比较先展示终态差异，再展开其余诊断：
+
+```bash
+python -m agent_evidence_kit stream compare --baseline normal.sse --candidate failed.sse --format md
+```
+
+两份合成捕获流的真实输出（正常结束 vs 上游错误；因观察到差异退出码为 1）：
+
+```markdown
+# 流结束比较：正常 vs 异常
+
+- 基线（正常）: NORMAL_TERMINATION · finish_reason（受控枚举）: stop · 是否见 [DONE]: 有
+- 候选（待比较）: UPSTREAM_ERROR · finish_reason（受控枚举）: none（未观察到 finish） · 是否见 [DONE]: 无
+
+## 终态差异
+
+- **终态**: NORMAL_TERMINATION → UPSTREAM_ERROR
+  - NORMAL_TERMINATION: 观察到正常finish且收到[DONE]：本profile下结束证据完整。这不代表答案正确或完整。
+  - UPSTREAM_ERROR: 流中包含上游错误事件（错误正文不回显）。
+- **判定**: NORMAL_TERMINATION → NEEDS_REVIEW
+
+## 诊断差异（逐步展开）
+
+- **finish_reason（受控枚举）**: stop → none（未观察到 finish）
+- **是否见 [DONE]**: 有 → 无
+- **终态事件位置**: @event2 → 未观察到
+- **诊断代码**: NORMAL_TERMINATION → UPSTREAM_ERROR
+  - [候选] UPSTREAM_ERROR: 流中包含上游错误事件（错误正文不回显）。
+- **事件数**: 4 → 2
+
+> 以上为两侧捕获流之间的观察差异；本比较不证明上游根因。
+```
+
+比较只读取两侧的结构投影：事件数据、生成文本、工具参数、未知原因原文、地址、会话标识和文件名都不会进入输出；未知 `finish_reason` 归入 `other` 类别而不回显原文。Web 端在「流结束检查」页有同样的比较（展开「正常 vs 异常比较」，粘贴两侧或载入两份合成样例后比较并分享）；静态展示页继续展示单份样例卡，并明确标注比较需在本地 CLI / Web 中使用。
+
 ## 它回答三个问题
 
 1. **“配置改完服务就不工作了”** — 检查配置中的传输冲突与迁移残留；每条发现说明已观察什么、含义、下一步怎么做、不能证明什么。
