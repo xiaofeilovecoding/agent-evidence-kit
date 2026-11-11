@@ -418,11 +418,17 @@ def create_app(store: SessionStore | None = None,
                     session.slots[m].clear()
                     session.generation[m] += 1
                 session.compare_generation += 1
+                session.compare_run_id = None
+                session.compare_side_run.clear()
+                session.compare_result_run = None
             elif module in MODULES:
                 session.slots[module].clear()
                 session.generation[module] += 1
                 if module == "stream":
                     session.compare_generation += 1
+                    session.compare_run_id = None
+                    session.compare_side_run.clear()
+                    session.compare_result_run = None
             else:
                 raise HttpError(422, "BAD_MODULE")
         return {"cleared": True}
@@ -488,7 +494,8 @@ def create_app(store: SessionStore | None = None,
     # ---- stream module endpoints ----
 
     @app.post("/api/stream/analyze")
-    async def stream_analyze(request: Request, lang: str = "zh-CN", slot: str = "current"):
+    async def stream_analyze(request: Request, lang: str = "zh-CN", slot: str = "current",
+                             run_id: str = ""):
         host = _check_host(request)
         session = _session_from_cookie(request)
         _require_exact_origin(request, host)
@@ -499,22 +506,31 @@ def create_app(store: SessionStore | None = None,
         if slot not in ("current", "baseline", "candidate"):
             raise HttpError(422, "BAD_SLOT")
         # C02: capture the generation BEFORE reading the body (see above).
-        # Compare-mode sides guard their own generation (E02 isolation): a
-        # compare revoke never invalidates a confirmed single-stream result.
+        # Compare-mode sides guard their own generation AND must name the
+        # server-issued run they belong to (E03): a stale run_id from an
+        # older prepare can never land over a newer run's side.
         with session.lock:
+            compare_mode = slot in ("baseline", "candidate")
+            if compare_mode:
+                if not run_id or session.compare_run_id != run_id:
+                    raise HttpError(409, "STALE_ANALYSIS")
             if session.in_flight >= MAX_CONCURRENT_ANALYSES:
                 raise HttpError(429, "TOO_MANY_ANALYSES")
             session.in_flight += 1
             generation = (
                 session.compare_generation
-                if slot in ("baseline", "candidate")
+                if compare_mode
                 else session.generation["stream"]
             )
         try:
             body = await _read_body_limited(request)
-            return _run_stream_analysis(session, generation, body, lang,
+            result = _run_stream_analysis(session, generation, body, lang,
                                         slot, projection_limit,
-                                        compare_guard=slot in ("baseline", "candidate"))
+                                        compare_guard=compare_mode)
+            if compare_mode:
+                with session.lock:
+                    session.compare_side_run[slot] = run_id
+            return result
         finally:
             with session.lock:
                 session.in_flight -= 1
@@ -530,21 +546,24 @@ def create_app(store: SessionStore | None = None,
         baseline_id = payload.get("baseline")
         candidate_id = payload.get("candidate")
         lang = payload.get("lang")
-        run_seq = payload.get("run_seq")
+        run_id = payload.get("run_id")
         if not isinstance(baseline_id, str) or not isinstance(candidate_id, str):
             raise HttpError(422, "BAD_JSON")
-        if not isinstance(run_seq, int) or isinstance(run_seq, bool) or run_seq < 1:
+        if not isinstance(run_id, str) or not run_id:
             raise HttpError(422, "BAD_JSON")
         if lang not in LANGUAGES:
             raise HttpError(422, "BAD_LANGUAGE")
-        # The comparison reads ONLY the two stored projections. Both must
-        # belong to the CURRENT compare generation: a revoke or clear between
-        # the side analyses and this call invalidates the whole comparison.
+        # E03: the comparison belongs to ONE server-issued run. Both sides
+        # must be results of THIS run; a stale run_id (older prepare) or an
+        # inter-generational clear invalidates the whole comparison.
         with session.lock:
             generation = session.compare_generation
-            # E02 ordering: a run started before a recorded revoke can never
-            # land after it.
-            if run_seq <= session.compare_last_seq:
+            if session.compare_run_id != run_id:
+                raise HttpError(409, "STALE_ANALYSIS")
+            if (
+                session.compare_side_run.get("baseline") != run_id
+                or session.compare_side_run.get("candidate") != run_id
+            ):
                 raise HttpError(409, "STALE_ANALYSIS")
         baseline_module, baseline_slot = _owned_result(session, baseline_id)
         candidate_module, candidate_slot = _owned_result(session, candidate_id)
@@ -554,33 +573,61 @@ def create_app(store: SessionStore | None = None,
         result = _land_result(session, "stream", generation, "compare",
                               compare_core, lang, projection_limit, compare_guard=True)
         with session.lock:
-            # record the run's sequence after a successful landing so a later
-            # revoke can only drop results from its own past
-            session.compare_slot_seq["compare"] = run_seq
+            session.compare_result_run = run_id
         return result
 
-    @app.post("/api/stream/compare/revoke")
-    async def stream_compare_revoke(request: Request):
+    @app.post("/api/stream/compare/prepare")
+    async def stream_compare_prepare(request: Request):
+        host = _check_host(request)
+        session = _session_from_cookie(request)
+        _require_exact_origin(request, host)
+        _require_csrf(request, session)
+        _check_content_type(request, "application/json")
+        await _read_json_payload(request)
+        # E03: compare identity is issued by the server. Starting a run
+        # immediately revokes everything compare-mode landed before it (old
+        # results and old sides die NOW, before the new run starts), so the
+        # identity is stable across page refreshes and never re-counted
+        # client-side. A confirmed single-stream result stays untouched.
+        with session.lock:
+            session.compare_generation += 1
+            session.compare_run_id = secrets.token_urlsafe(16)
+            session.compare_side_run.clear()
+            session.compare_result_run = None
+            for slot_name in ("baseline", "candidate", "compare"):
+                session.slots["stream"].pop(slot_name, None)
+            run_id = session.compare_run_id
+        return {"run_id": run_id}
+
+    @app.post("/api/stream/compare/cancel")
+    async def stream_compare_cancel(request: Request):
         host = _check_host(request)
         session = _session_from_cookie(request)
         _require_exact_origin(request, host)
         _require_csrf(request, session)
         _check_content_type(request, "application/json")
         payload = await _read_json_payload(request)
-        revoke_seq = payload.get("revoke_seq")
-        if not isinstance(revoke_seq, int) or isinstance(revoke_seq, bool) or revoke_seq < 1:
+        run_id = payload.get("run_id")
+        if not isinstance(run_id, str) or not run_id:
             raise HttpError(422, "BAD_JSON")
-        # E02: revoking the two compare sides and the comparison is isolated
-        # from a confirmed single-stream result, and can only drop results
-        # created at or before the revoke's own sequence — a late revoke
-        # cannot wipe a newer comparison.
+        # E03: cancelling a run revokes whatever that run landed AND marks the
+        # run dead server-side — in-flight results of it can never land, even
+        # if the client never receives this response. Cancelling an OLDER run
+        # touches only that run's slots; a newer comparison survives.
         with session.lock:
-            session.compare_last_seq = max(session.compare_last_seq, revoke_seq)
-            for slot_name in ("baseline", "candidate", "compare"):
-                if session.compare_slot_seq.get(slot_name, 0) <= revoke_seq:
-                    session.slots["stream"].pop(slot_name, None)
-                    session.compare_slot_seq.pop(slot_name, None)
-        return {"revoked": True}
+            if session.compare_side_run.get("baseline") == run_id:
+                session.slots["stream"].pop("baseline", None)
+                session.compare_side_run.pop("baseline", None)
+            if session.compare_side_run.get("candidate") == run_id:
+                session.slots["stream"].pop("candidate", None)
+                session.compare_side_run.pop("candidate", None)
+            if session.compare_result_run == run_id:
+                session.slots["stream"].pop("compare", None)
+                session.compare_result_run = None
+            if session.compare_run_id == run_id:
+                session.compare_generation += 1
+                session.compare_run_id = None
+        return {"cancelled": True}
 
     @app.post("/api/stream/demo")
     async def stream_demo(request: Request):

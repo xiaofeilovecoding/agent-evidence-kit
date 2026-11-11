@@ -244,17 +244,37 @@ class WebCompareCase(unittest.TestCase):
         csrf = response.json()["csrf_token"]
         return csrf, {"Host": "127.0.0.1:7413", "X-CSRF-Token": csrf, "Origin": BASE}
 
-    _seq = 0
-
-    def run_seq(self) -> int:
-        WebCompareCase._seq += 1
-        return WebCompareCase._seq
-
-    def analyze(self, data: bytes, slot: str = "current"):
+    def analyze(self, data: bytes, slot: str = "current", run_id: str = ""):
+        suffix = f"&run_id={run_id}" if run_id else ""
         return self.client.post(
-            f"/api/stream/analyze?lang=en&slot={slot}",
+            f"/api/stream/analyze?lang=en&slot={slot}{suffix}",
             content=data,
             headers={**self.headers, "Content-Type": "application/octet-stream"},
+        )
+
+    def prepare(self) -> str:
+        response = self.client.post(
+            "/api/stream/compare/prepare",
+            headers={**self.headers, "Content-Type": "application/json"},
+            content=b"{}",
+        )
+        assert response.status_code == 200, response.text
+        return response.json()["run_id"]
+
+    def compare(self, base_id: str, cand_id: str, run_id: str, lang: str = "en"):
+        return self.client.post(
+            "/api/stream/compare",
+            headers={**self.headers, "Content-Type": "application/json"},
+            content=json.dumps({
+                "baseline": base_id, "candidate": cand_id, "lang": lang, "run_id": run_id,
+            }).encode(),
+        )
+
+    def export(self, result_id: str, lang: str = "en", fmt: str = "md"):
+        return self.client.post(
+            "/api/export",
+            headers={**self.headers, "Content-Type": "application/json"},
+            content=json.dumps({"result_id": result_id, "lang": lang, "format": fmt}).encode(),
         )
 
     def test_analyze_rejects_unknown_slot(self):
@@ -262,28 +282,44 @@ class WebCompareCase(unittest.TestCase):
         self.assertEqual(response.status_code, 422)
 
     def test_compare_full_flow_and_projection_only(self):
-        base = self.analyze(NORMAL, slot="baseline").json()
-        cand = self.analyze(b'data: {"error": {"x": 1}}\n\n', slot="candidate").json()
-        compare = self.client.post(
-            "/api/stream/compare",
-            headers={**self.headers, "Content-Type": "application/json"},
-            content=json.dumps({"baseline": base["result_id"], "candidate": cand["result_id"], "lang": "en", "run_seq": self.run_seq()}).encode(),
-        )
+        run_id = self.prepare()
+        base = self.analyze(NORMAL, slot="baseline", run_id=run_id).json()
+        cand = self.analyze(b'data: {"error": {"x": 1}}\n\n', slot="candidate", run_id=run_id).json()
+        compare = self.compare(base["result_id"], cand["result_id"], run_id)
+        self.assertEqual(compare.status_code, 200, compare.text)
+        card = compare.json()["result"]
+        self.assertEqual(card["kind"], "stream-compare")
+        self.assertEqual(card["schema_version"], 1)
+        fields = [d["field"] for d in card["differences"]]
+        self.assertEqual(fields[0], "terminal")
+        rid = compare.json()["result_id"]
+        rerender = self.client.get(f"/api/results/{rid}?lang=zh-CN", headers=self.headers)
+        self.assertEqual(rerender.status_code, 200)
+        self.assertEqual(rerender.json()["result"]["language"], "zh-CN")
+
+    def test_compare_requires_both_stream_results(self):
+        run_id = self.prepare()
+        config = self.client.post(
+            "/api/config/analyze?lang=en",
+            content=b"{}",
+            headers={**self.headers, "Content-Type": "application/octet-stream", "X-Input-Format": "json"},
+        ).json()
+        response = self.compare(config["result_id"], config["result_id"], run_id)
+        self.assertIn(response.status_code, (404, 409), "config results can never feed a stream compare")
+
+    def test_edit_then_clear_revokes_old_share(self):
+        run_id = self.prepare()
+        base = self.analyze(NORMAL, slot="baseline", run_id=run_id).json()
+        cand = self.analyze(b'data: {"error": {"x": 1}}\n\n', slot="candidate", run_id=run_id).json()
+        compare = self.compare(base["result_id"], cand["result_id"], run_id)
         old_id = compare.json()["result_id"]
-        # the user edits one side: the UI issues clear, which bumps the
-        # generation and drops every stream slot (both sides + comparison)
         cleared = self.client.post(
             "/api/clear",
             headers={**self.headers, "Content-Type": "application/json"},
             content=json.dumps({"module": "stream"}).encode(),
         )
         self.assertEqual(cleared.status_code, 200)
-        # the old share cannot revive: export and re-render both 404
-        export = self.client.post(
-            "/api/export",
-            headers={**self.headers, "Content-Type": "application/json"},
-            content=json.dumps({"result_id": old_id, "lang": "en", "format": "md"}).encode(),
-        )
+        export = self.export(old_id)
         self.assertEqual(export.status_code, 404, "old share must not revive after edit+clear")
         rerender = self.client.get(f"/api/results/{old_id}?lang=en", headers=self.headers)
         self.assertEqual(rerender.status_code, 404)
@@ -309,7 +345,6 @@ class WebCompareCase(unittest.TestCase):
         worker = threading.Thread(target=run_compare)
         worker.start()
         self.assertTrue(body_started.wait(timeout=5))
-        # wait until the handler actually captured the generation
         time.sleep(0.2)
         cleared = self.client.post(
             "/api/clear",
@@ -319,140 +354,127 @@ class WebCompareCase(unittest.TestCase):
         self.assertEqual(cleared.status_code, 200)
         gate.set()
         worker.join(timeout=10)
-        # the compare itself needs two owned results; without them the stale
-        # guard may surface as 409 STALE_ANALYSIS or 404 NO_RESULT — both are
-        # refusals, never a revived share
         self.assertTrue(True, "worker completed without a revived share")
 
     def test_compare_export_bytes_match_preview(self):
-        base = self.analyze(NORMAL, slot="baseline").json()
-        cand = self.analyze(_chunk("a") + _chunk("b", "length") + b"data: [DONE]\n\n", slot="candidate").json()
-        compare = self.client.post(
-            "/api/stream/compare",
-            headers={**self.headers, "Content-Type": "application/json"},
-            content=json.dumps({"baseline": base["result_id"], "candidate": cand["result_id"], "lang": "en", "run_seq": self.run_seq()}).encode(),
-        )
+        run_id = self.prepare()
+        base = self.analyze(NORMAL, slot="baseline", run_id=run_id).json()
+        cand = self.analyze(_chunk("a") + _chunk("b", "length") + b"data: [DONE]\n\n", slot="candidate", run_id=run_id).json()
+        compare = self.compare(base["result_id"], cand["result_id"], run_id)
         rid = compare.json()["result_id"]
-        export = self.client.post(
-            "/api/export",
-            headers={**self.headers, "Content-Type": "application/json"},
-            content=json.dumps({"result_id": rid, "lang": "en", "format": "json"}).encode(),
-        )
+        export = self.export(rid, fmt="json")
         self.assertEqual(export.status_code, 200)
         payload = export.json()
         self.assertIn("stream-compare", payload["filename"])
-        # downloaded bytes == the re-rendered preview (same core, same language)
         rerender = self.client.get(f"/api/results/{rid}?lang=en", headers=self.headers)
         self.assertEqual(
             json.loads(payload["content"])["differences"],
             rerender.json()["result"]["differences"],
         )
 
+    # ---- E03: server-issued run identity ----
 
+    def test_prepare_revokes_previous_run_immediately(self):
+        # the reported defect: after a successful comparison, a refreshed page
+        # (fresh prepare) must not collide with stale session state — and the
+        # OLD comparison is revoked the moment the new run is prepared
+        run_a = self.prepare()
+        base_a = self.analyze(NORMAL, slot="baseline", run_id=run_a).json()
+        cand_a = self.analyze(b'data: {"error": {"x": 1}}\n\n', slot="candidate", run_id=run_a).json()
+        compare_a = self.compare(base_a["result_id"], cand_a["result_id"], run_a)
+        self.assertEqual(compare_a.status_code, 200)
+        old_id = compare_a.json()["result_id"]
+        self.assertEqual(self.export(old_id).status_code, 200)
+        # "refresh": a new prepare — the old comparison dies right here
+        run_b = self.prepare()
+        self.assertEqual(self.export(old_id).status_code, 404,
+                         "prepare revokes the previous run's landed results immediately")
+        # and a fresh comparison works under the new identity
+        base_b = self.analyze(NORMAL, slot="baseline", run_id=run_b).json()
+        cand_b = self.analyze(_chunk("a") + _chunk("b", "length") + b"data: [DONE]\n\n", slot="candidate", run_id=run_b).json()
+        compare_b = self.compare(base_b["result_id"], cand_b["result_id"], run_b)
+        self.assertEqual(compare_b.status_code, 200, "the refreshed run compares cleanly")
+        self.assertEqual(self.export(compare_b.json()["result_id"]).status_code, 200)
 
-    # ---- E01/E02: isolation, ordering, revocation semantics ----
+    def test_stale_run_id_cannot_land(self):
+        run_a = self.prepare()
+        run_b = self.prepare()
+        # analyzing for a superseded run can never land over the newer run
+        stale_side = self.analyze(NORMAL, slot="baseline", run_id=run_a)
+        self.assertEqual(stale_side.status_code, 409, "stale run_id side is refused")
+        base_b = self.analyze(NORMAL, slot="baseline", run_id=run_b).json()
+        cand_b = self.analyze(b'data: {"error": {"x": 1}}\n\n', slot="candidate", run_id=run_b).json()
+        stale_compare = self.compare(base_b["result_id"], cand_b["result_id"], run_a)
+        self.assertEqual(stale_compare.status_code, 409, "stale run_id compare is refused")
 
-    def test_compare_revoke_isolated_from_normal_result(self):
-        normal = self.analyze(NORMAL, slot="current").json()
-        base = self.analyze(NORMAL, slot="baseline").json()
-        cand = self.analyze(b'data: {"error": {"x": 1}}\\n\\n', slot="candidate").json()
-        compare = self.client.post(
-            "/api/stream/compare",
-            headers={**self.headers, "Content-Type": "application/json"},
-            content=json.dumps({"baseline": base["result_id"], "candidate": cand["result_id"],
-                                "lang": "en", "run_seq": self.run_seq()}).encode(),
-        )
-        compare_id = compare.json()["result_id"]
-        # revoke the compare mode only
-        revoked = self.client.post(
-            "/api/stream/compare/revoke",
-            headers={**self.headers, "Content-Type": "application/json"},
-            content=json.dumps({"revoke_seq": self.run_seq()}).encode(),
-        )
-        self.assertEqual(revoked.status_code, 200)
-        # the confirmed single-stream result still shares
-        export = self.client.post(
-            "/api/export",
-            headers={**self.headers, "Content-Type": "application/json"},
-            content=json.dumps({"result_id": normal["result_id"], "lang": "en", "format": "md"}).encode(),
-        )
-        self.assertEqual(export.status_code, 200, "normal result survives a compare revoke")
-        # the comparison and both sides are gone
-        for dead_id in (compare_id, base["result_id"], cand["result_id"]):
-            dead = self.client.post(
-                "/api/export",
-                headers={**self.headers, "Content-Type": "application/json"},
-                content=json.dumps({"result_id": dead_id, "lang": "en", "format": "md"}).encode(),
-            )
-            self.assertEqual(dead.status_code, 404, "compare-mode results revoked")
+    def test_sides_must_belong_to_the_run(self):
+        run_a = self.prepare()
+        base_a = self.analyze(NORMAL, slot="baseline", run_id=run_a).json()
+        run_b = self.prepare()
+        cand_b = self.analyze(b'data: {"error": {"x": 1}}\n\n', slot="candidate", run_id=run_b).json()
+        # mixing sides from different runs can never compare
+        mixed = self.compare(base_a["result_id"], cand_b["result_id"], run_b)
+        self.assertEqual(mixed.status_code, 409, "side from another run is refused")
 
-    def test_late_revoke_cannot_wipe_newer_compare(self):
-        base_a = self.analyze(NORMAL, slot="baseline").json()
-        cand_a = self.analyze(b'data: {"error": {"x": 1}}\n\n', slot="candidate").json()
-        run_a = self.run_seq()
-        compare_a = self.client.post(
-            "/api/stream/compare",
+    def test_cancel_kills_in_flight_and_landed_results(self):
+        run_id = self.prepare()
+        base = self.analyze(NORMAL, slot="baseline", run_id=run_id).json()
+        cand = self.analyze(b'data: {"error": {"x": 1}}\n\n', slot="candidate", run_id=run_id).json()
+        compare = self.compare(base["result_id"], cand["result_id"], run_id)
+        self.assertEqual(compare.status_code, 200)
+        landed_id = compare.json()["result_id"]
+        cancelled = self.client.post(
+            "/api/stream/compare/cancel",
             headers={**self.headers, "Content-Type": "application/json"},
-            content=json.dumps({"baseline": base_a["result_id"], "candidate": cand_a["result_id"],
-                                "lang": "en", "run_seq": run_a}).encode(),
-        ).json()
-        # a revoke is issued (seq 10) and a NEWER comparison lands (seq 11)
-        revoke_seq = 10
-        newer_seq = 11
-        self.client.post(
-            "/api/stream/compare/revoke",
-            headers={**self.headers, "Content-Type": "application/json"},
-            content=json.dumps({"revoke_seq": revoke_seq}).encode(),
+            content=json.dumps({"run_id": run_id}).encode(),
         )
-        base_b = self.analyze(NORMAL, slot="baseline").json()
-        cand_b = self.analyze(_chunk("a") + _chunk("b", "length") + b"data: [DONE]\n\n", slot="candidate").json()
-        compare_b = self.client.post(
-            "/api/stream/compare",
-            headers={**self.headers, "Content-Type": "application/json"},
-            content=json.dumps({"baseline": base_b["result_id"], "candidate": cand_b["result_id"],
-                                "lang": "en", "run_seq": newer_seq}).encode(),
-        )
+        self.assertEqual(cancelled.status_code, 200)
+        # everything that run landed is revoked — even without any further
+        # client action (the response could have been lost in transit)
+        self.assertEqual(self.export(landed_id).status_code, 404)
+        self.assertEqual(self.export(base["result_id"]).status_code, 404)
+        self.assertEqual(self.export(cand["result_id"]).status_code, 404)
+        # a late landing for the cancelled run can never arrive
+        late_side = self.analyze(NORMAL, slot="baseline", run_id=run_id)
+        self.assertEqual(late_side.status_code, 409, "cancelled run is dead server-side")
+
+    def test_cancel_of_old_run_cannot_touch_newer_results(self):
+        run_a = self.prepare()
+        base_a = self.analyze(NORMAL, slot="baseline", run_id=run_a).json()
+        cand_a = self.analyze(b'data: {"error": {"x": 1}}\n\n', slot="candidate", run_id=run_a).json()
+        compare_a = self.compare(base_a["result_id"], cand_a["result_id"], run_a)
+        landed_a = compare_a.json()["result_id"]
+        # a NEWER run supersedes A, then the user cancels the OLD run
+        run_b = self.prepare()
+        base_b = self.analyze(NORMAL, slot="baseline", run_id=run_b).json()
+        cand_b = self.analyze(b'data: {"error": {"x": 1}}\n\n', slot="candidate", run_id=run_b).json()
+        compare_b = self.compare(base_b["result_id"], cand_b["result_id"], run_b)
         self.assertEqual(compare_b.status_code, 200)
-        # the late revoke replays: the older comparison dies, the newer one survives
-        replay = self.client.post(
-            "/api/stream/compare/revoke",
+        landed_b = compare_b.json()["result_id"]
+        cancelled = self.client.post(
+            "/api/stream/compare/cancel",
             headers={**self.headers, "Content-Type": "application/json"},
-            content=json.dumps({"revoke_seq": revoke_seq}).encode(),
+            content=json.dumps({"run_id": run_a}).encode(),
         )
-        self.assertEqual(replay.status_code, 200)
-        old_export = self.client.post(
-            "/api/export",
-            headers={**self.headers, "Content-Type": "application/json"},
-            content=json.dumps({"result_id": compare_a["result_id"], "lang": "en", "format": "md"}).encode(),
-        )
-        self.assertEqual(old_export.status_code, 404, "older comparison stays revoked")
-        new_export = self.client.post(
-            "/api/export",
-            headers={**self.headers, "Content-Type": "application/json"},
-            content=json.dumps({"result_id": compare_b.json()["result_id"], "lang": "en", "format": "md"}).encode(),
-        )
-        self.assertEqual(new_export.status_code, 200, "late revoke cannot wipe a newer comparison")
-        # a run that STARTED before the revoke can never land after it
-        stale_run = self.client.post(
-            "/api/stream/compare",
-            headers={**self.headers, "Content-Type": "application/json"},
-            content=json.dumps({"baseline": base_b["result_id"], "candidate": cand_b["result_id"],
-                                "lang": "en", "run_seq": revoke_seq}).encode(),
-        )
-        self.assertEqual(stale_run.status_code, 409, "run_seq <= last revoke is stale")
+        self.assertEqual(cancelled.status_code, 200)
+        self.assertEqual(self.export(landed_a).status_code, 404, "old run revoked by its own cancel")
+        self.assertEqual(self.export(landed_b).status_code, 200,
+                         "a late cancel of an older run cannot wipe a newer comparison")
 
-    def test_missing_run_seq_rejected(self):
-        base = self.analyze(NORMAL, slot="baseline").json()
-        cand = self.analyze(b'data: {"error": {"x": 1}}\\n\\n', slot="candidate").json()
-        response = self.client.post(
+    def test_missing_run_id_rejected(self):
+        run_id = self.prepare()
+        base = self.analyze(NORMAL, slot="baseline", run_id=run_id).json()
+        cand = self.analyze(b'data: {"error": {"x": 1}}\n\n', slot="candidate", run_id=run_id).json()
+        no_run = self.client.post(
             "/api/stream/compare",
             headers={**self.headers, "Content-Type": "application/json"},
             content=json.dumps({"baseline": base["result_id"], "candidate": cand["result_id"],
                                 "lang": "en"}).encode(),
         )
-        self.assertEqual(response.status_code, 422)
+        self.assertEqual(no_run.status_code, 422)
+        side_without_run = self.analyze(NORMAL, slot="baseline")
+        self.assertEqual(side_without_run.status_code, 409, "compare sides must name their run")
 
 
 if __name__ == "__main__":
     unittest.main()
-

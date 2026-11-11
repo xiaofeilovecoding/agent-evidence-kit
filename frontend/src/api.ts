@@ -13,15 +13,17 @@ export interface DataAdapter {
     lang: Lang,
     signal?: AbortSignal,
     slot?: "current" | "baseline" | "candidate",
+    runId?: string,
   ): Promise<AnalysisOutcome>;
+  prepareCompare(): Promise<{ run_id: string }>;
   compareStream(
     baselineId: string,
     candidateId: string,
     lang: Lang,
+    runId: string,
     signal?: AbortSignal,
-    runSeq?: number,
   ): Promise<AnalysisOutcome>;
-  revokeCompare(revokeSeq?: number): Promise<void>;
+  cancelCompare(runId: string): Promise<void>;
   rerender(resultId: string, lang: Lang): Promise<Card>;
   export(resultId: string, lang: Lang, format: "json" | "md"): Promise<ExportPayload>;
   exportCombined(
@@ -132,7 +134,7 @@ export function createApiAdapter(): DataAdapter {
     async runDemo(module, caseId, lang) {
       return postJson(`/api/${module}/demo`, { case_id: caseId, lang });
     },
-    async analyzeBytes(module, data, format, lang, signal, slot) {
+    async analyzeBytes(module, data, format, lang, signal, slot, runId) {
       return withRecovery(async (_retry) => {
         await ensureSession();
         const headers: Record<string, string> = {
@@ -141,7 +143,8 @@ export function createApiAdapter(): DataAdapter {
         };
         if (module === "config") headers["X-Input-Format"] = format ?? "json";
         const slotParam = slot ? `&slot=${slot}` : "";
-        const response = await fetch(`/api/${module}/analyze?lang=${lang}${slotParam}`, {
+        const runParam = runId ? `&run_id=${encodeURIComponent(runId)}` : "";
+        const response = await fetch(`/api/${module}/analyze?lang=${lang}${slotParam}${runParam}`, {
           method: "POST",
           credentials: "same-origin",
           signal,
@@ -152,12 +155,13 @@ export function createApiAdapter(): DataAdapter {
         return (await response.json()) as AnalysisOutcome;
       });
     },
-    async revokeCompare(revokeSeq) {
-      const payload: Record<string, unknown> = {};
-      if (revokeSeq !== undefined) payload.revoke_seq = revokeSeq;
-      await postJson("/api/stream/compare/revoke", payload);
+    async prepareCompare() {
+      return postJson<{ run_id: string }>("/api/stream/compare/prepare", {});
     },
-    async compareStream(baselineId, candidateId, lang, signal, runSeq) {
+    async cancelCompare(runId) {
+      await postJson("/api/stream/compare/cancel", { run_id: runId });
+    },
+    async compareStream(baselineId, candidateId, lang, runId, signal) {
       return withRecovery(async (_retry) => {
         await ensureSession();
         const response = await fetch("/api/stream/compare", {
@@ -172,7 +176,7 @@ export function createApiAdapter(): DataAdapter {
             baseline: baselineId,
             candidate: candidateId,
             lang,
-            ...(runSeq !== undefined ? { run_seq: runSeq } : {}),
+            run_id: runId,
           }),
         });
         if (!response.ok) await readError(response);

@@ -64,13 +64,14 @@ class _Session:
         # result (E02: isolation; revocation and the next compare run are
         # ordered by this counter).
         self.compare_generation = 0
-        # E02 ordering: client-side monotonic sequence numbers. A revoke
-        # carries the seq it was issued at; a compare run carries the seq it
-        # started at. A revoke can only drop results created at or before its
-        # own seq, so a late (retried/lost-then-replayed) revoke can never
-        # wipe a newer comparison.
-        self.compare_last_seq = 0
-        self.compare_slot_seq: dict[str, int] = {}
+        # E03: compare identity is SERVER-ISSUED. prepareCompare hands out a
+        # run_id and revokes everything compare-mode landed before it, so the
+        # identity survives page refreshes and is never re-counted client-side
+        # (a refreshed tab cannot collide with stale session state).
+        self.compare_run_id: str | None = None
+        # which run each compare-mode slot belongs to
+        self.compare_side_run: dict[str, str] = {}
+        self.compare_result_run: str | None = None
         self.in_flight = 0
         self.lock = threading.Lock()
 

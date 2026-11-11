@@ -70,8 +70,11 @@ export function createShowcaseAdapter(): DataAdapter {
     async analyzeBytes(): Promise<AnalysisOutcome> {
       throw new Error("showcase accepts no personal input");
     },
-    async revokeCompare(): Promise<void> {
-      /* nothing to revoke in showcase */
+    async prepareCompare(): Promise<{ run_id: string }> {
+      throw new Error("compare is available in the local CLI / web app, not in the static showcase");
+    },
+    async cancelCompare(): Promise<void> {
+      /* nothing to cancel in showcase */
     },
     async compareStream(): Promise<AnalysisOutcome> {
       // E4: the static showcase cannot run comparisons; the UI directs users

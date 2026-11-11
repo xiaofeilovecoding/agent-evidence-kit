@@ -650,6 +650,71 @@ class BrowserJourney(unittest.TestCase):
         context.close()
         self.assertEqual(self.console_errors, [])
 
+    def test_compare_survives_page_refresh(self):
+        """E03 (the reported defect): a successful comparison, then a page
+        reload, then comparing again must succeed — the run identity is
+        server-issued and never re-counted client-side."""
+        self.open_stream_paste()
+        compare = self.view("stream").locator('[data-testid="stream-compare"]')
+        compare.locator("summary").click()
+        compare.get_by_role("button", name="载入正常样例 → 基线").click()
+        compare.get_by_role("button", name="载入上游错误样例 → 候选").click()
+        compare.locator('[data-testid="compare-run"]').click()
+        compare.locator('[data-testid="compare-result"]').wait_for(timeout=15000)
+        # refresh: same session cookie, fresh page state
+        self.page.reload()
+        self.open_stream_paste()
+        compare = self.view("stream").locator('[data-testid="stream-compare"]')
+        compare.locator("summary").click()
+        compare.get_by_role("button", name="载入正常样例 → 基线").click()
+        compare.get_by_role("button", name="载入上游错误样例 → 候选").click()
+        compare.locator('[data-testid="compare-run"]').click()
+        compare.locator('[data-testid="compare-result"]').wait_for(timeout=15000)
+        diffs = compare.locator(".compare-diff-row")
+        self.assertGreaterEqual(diffs.count(), 1, "the refreshed run compares cleanly")
+        self.assertEqual(self.console_errors, [])
+
+    def test_compare_edit_during_wait_cancels_server_side(self):
+        """E03: hold the real compare response, edit one side — the cancel
+        is issued server-side (the run dies even without a client response);
+        releasing the old response cannot revive anything, and the next run
+        prepares a fresh identity and lands."""
+        self.open_stream_paste()
+        compare = self.view("stream").locator('[data-testid="stream-compare"]')
+        compare.locator("summary").click()
+        compare.get_by_role("button", name="载入正常样例 → 基线").click()
+        compare.get_by_role("button", name="载入上游错误样例 → 候选").click()
+        held: list[object] = []
+        self.page.route(
+            "**/api/stream/compare",
+            lambda route: held.append(route),
+        )
+        compare.locator('[data-testid="compare-run"]').click()
+        deadline = time.time() + 10
+        while not held and time.time() < deadline:
+            self.page.wait_for_timeout(50)
+        self.assertTrue(held, "compare request captured in flight")
+        compare.locator('[data-testid="compare-baseline-input"]').fill(
+            'data: {"choices": [{"index": 0, "delta": {"content": "edited"}}]}'
+            + chr(10) * 2
+        )
+        self.page.wait_for_timeout(500)  # let the edit-triggered cancel settle
+        for route in held:
+            route.continue_()
+        self.page.wait_for_timeout(500)
+        self.assertEqual(
+            compare.locator('[data-testid="compare-result"]').count(), 0,
+            "stale compare result must not apply after an edit",
+        )
+        self.page.unroute("**/api/stream/compare")
+        run_btn = compare.locator('[data-testid="compare-run"]')
+        self.assertTrue(run_btn.is_enabled(), "run button usable after the stale race")
+        run_btn.click()
+        compare.locator('[data-testid="compare-result"]').wait_for(timeout=15000)
+        new_share = compare.locator(".share-block, .export-block")
+        self.assertEqual(new_share.count(), 1, "the new comparison is shareable")
+        self.assertEqual(self.console_errors, [])
+
     def test_compare_edit_inflight_response_never_revives_share(self):
         """E3: hold the compare response in flight, edit one side, release the
         old response — the stale comparison and its share must not come back."""

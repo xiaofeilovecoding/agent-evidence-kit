@@ -80,15 +80,15 @@ export default function StreamCompare({ lang, gated }: Props) {
   const [compareId, setCompareId] = useState<string | null>(null);
   const [inputRevision, setInputRevision] = useState(0);
   const compareRevRef = useRef(0);
-  // E02 ordering: monotonically increasing sequence for revokes and runs.
-  const compareSeqRef = useRef(0);
   const abortRef = useRef<AbortController | null>(null);
   const mountedRef = useRef(true);
-  // E02: at most one server revoke is in flight; the next compare run awaits
-  // it so revocation and creation stay ordered by the compare generation.
-  const pendingRevokeRef = useRef<Promise<void> | null>(null);
-  // E01: a ready comparison exists — the next edit fires exactly one server
-  // revoke (never per keystroke) and immediately drops the old share.
+  // E03: compare identity is server-issued per run. The CURRENT run id lives
+  // here; starting a new run (prepare) immediately revokes everything the
+  // previous run landed, and edits cancel the current run server-side.
+  const runIdRef = useRef<string | null>(null);
+  // at most one server cancel is in flight; the next prepare awaits it
+  const pendingCancelRef = useRef<Promise<void> | null>(null);
+  // a ready comparison exists — the next edit cancels its run exactly once
   const readyRef = useRef(false);
   // E02: per-side file reads carry side + generation tickets.
   const fileTicketRef = useRef<Record<Side, number>>({ baseline: 0, candidate: 0 });
@@ -104,29 +104,32 @@ export default function StreamCompare({ lang, gated }: Props) {
     };
   }, []);
 
-  const fireServerRevoke = useCallback(() => {
-    const revokeSeq = ++compareSeqRef.current;
+  /** Server-side cancel of the CURRENT run: drops what it landed and marks
+   * it dead so in-flight results can never land, even if this response is
+   * lost. Cancelling an older run never touches a newer comparison. */
+  const fireServerCancel = useCallback(() => {
+    const runId = runIdRef.current;
+    if (!runId) return;
     const pending = adapter
-      .revokeCompare(revokeSeq)
+      .cancelCompare(runId)
       .catch(() => {
         // Transfer failed: say so precisely — the old share stays disabled
-        // locally and the next compare run will surface any stale rejection.
+        // locally and the next prepare revokes everything compare-mode has.
         if (mountedRef.current) {
           setStatus((prev) => (prev === "loading" ? "empty" : prev));
           setMessage(
             lang === "zh-CN"
-              ? "撤销请求未确认：旧分享保持禁用；重新比较将按当前代次执行。"
-              : "Revoke was not confirmed: the previous share stays disabled; the next compare runs under the current generation.",
+              ? "取消请求未确认：旧分享保持禁用；重新比较将立即撤销旧比较。"
+              : "Cancel was not confirmed: the previous share stays disabled; the next compare revokes the old one immediately.",
           );
         }
       });
-    pendingRevokeRef.current = pending;
-    return pending;
+    pendingCancelRef.current = pending;
   }, [lang]);
 
   /** Any edit/new run revokes the previous comparison immediately: the UI
    * drops it and exits loading (the run button is usable again), and the
-   * server revoke fires once per ready→edit transition. */
+   * server cancel fires once per ready/edit→next-transition. */
   const revoke = useCallback(
     (fireServer: boolean) => {
       compareRevRef.current += 1;
@@ -137,14 +140,17 @@ export default function StreamCompare({ lang, gated }: Props) {
       setCompareId(null);
       setInputRevision((r) => r + 1);
       // E01: an in-flight compare must leave loading — the stale response is
-      // dropped by the generation check and the button is usable again.
+      // dropped by the run-identity check and the button is usable again.
       setStatus((prev) => (prev === "loading" ? "empty" : prev));
       setMessage(null);
-      if (fireServer && wasReady && !isShowcase) {
-        fireServerRevoke();
+      if (fireServer && !isShowcase && (wasReady || runIdRef.current)) {
+        // E03: cancel the current run server-side — it revokes landed and
+        // in-flight results of that run; the next prepare revokes the rest.
+        fireServerCancel();
+        runIdRef.current = null;
       }
     },
-    [fireServerRevoke],
+    [fireServerCancel],
   );
 
   const onEdit = useCallback(
@@ -267,15 +273,16 @@ export default function StreamCompare({ lang, gated }: Props) {
       setMessage(t("tooLargeStream", lang));
       return;
     }
-    // E02 ordering: an in-flight server revoke settles before this run's
-    // analyses, so they capture the post-revoke compare generation.
-    if (pendingRevokeRef.current) {
-      const pending = pendingRevokeRef.current;
-      pendingRevokeRef.current = null;
+    // E03 ordering: an in-flight server cancel settles before the prepare so
+    // revocation and creation stay ordered; the prepare itself revokes
+    // everything the previous run landed, immediately.
+    if (pendingCancelRef.current) {
+      const pending = pendingCancelRef.current;
+      pendingCancelRef.current = null;
       try {
         await pending;
       } catch {
-        /* handled by the revoke error path; the run proceeds fail-closed */
+        /* handled by the cancel error path; the run proceeds fail-closed */
       }
     }
     compareRevRef.current += 1;
@@ -289,17 +296,22 @@ export default function StreamCompare({ lang, gated }: Props) {
     setCard(null);
     setCompareId(null);
     try {
+      // E03: the server issues this run's identity; the prepare already
+      // revoked everything the previous run landed.
+      const prepared = await adapter.prepareCompare();
+      if (rev !== compareRevRef.current || !mountedRef.current) return;
+      const runId = prepared.run_id;
+      runIdRef.current = runId;
       const baselineOutcome = await adapter.analyzeBytes(
-        "stream", baseBytes, null, lang, controller.signal, "baseline",
+        "stream", baseBytes, null, lang, controller.signal, "baseline", runId,
       );
       if (rev !== compareRevRef.current || !mountedRef.current) return;
       const candidateOutcome = await adapter.analyzeBytes(
-        "stream", candBytes, null, lang, controller.signal, "candidate",
+        "stream", candBytes, null, lang, controller.signal, "candidate", runId,
       );
       if (rev !== compareRevRef.current || !mountedRef.current) return;
-      const runSeq = ++compareSeqRef.current;
       const outcome = await adapter.compareStream(
-        baselineOutcome.result_id, candidateOutcome.result_id, lang, controller.signal, runSeq,
+        baselineOutcome.result_id, candidateOutcome.result_id, lang, runId, controller.signal,
       );
       if (rev !== compareRevRef.current || !mountedRef.current) return;
       setCard(outcome.result as unknown as StreamCompareCard);
@@ -316,6 +328,7 @@ export default function StreamCompare({ lang, gated }: Props) {
         return;
       }
       readyRef.current = false;
+      runIdRef.current = null;
       if (isSessionError(error)) {
         setMessage(t("sessionExpired", lang));
       } else if (error instanceof RequestFailed && (error.code === "NO_RESULT" || error.code === "STALE_ANALYSIS")) {
