@@ -86,10 +86,9 @@ export default function StreamCompare({ lang, gated }: Props) {
   // here; starting a new run (prepare) immediately revokes everything the
   // previous run landed, and edits cancel the current run server-side.
   const runIdRef = useRef<string | null>(null);
-  // at most one server cancel is in flight; the next prepare awaits it
+  // Keep unresolved requests visible to every superseding click.
   const pendingCancelRef = useRef<Promise<void> | null>(null);
-  // a ready comparison exists — the next edit cancels its run exactly once
-  const readyRef = useRef(false);
+  const pendingPrepareRef = useRef<ReturnType<typeof adapter.prepareCompare> | null>(null);
   // E02: per-side file reads carry side + generation tickets.
   const fileTicketRef = useRef<Record<Side, number>>({ baseline: 0, candidate: 0 });
   const fileInputRef = useRef<Record<Side, HTMLInputElement | null>>({
@@ -107,22 +106,23 @@ export default function StreamCompare({ lang, gated }: Props) {
   /** Server-side cancel of the CURRENT run: drops what it landed and marks
    * it dead so in-flight results can never land, even if this response is
    * lost. Cancelling an older run never touches a newer comparison. */
-  const fireServerCancel = useCallback(() => {
-    const runId = runIdRef.current;
-    if (!runId) return;
+  const fireServerCancel = useCallback((runId: string) => {
+    const revision = compareRevRef.current;
     const pending = adapter
       .cancelCompare(runId)
       .catch(() => {
         // Transfer failed: say so precisely — the old share stays disabled
         // locally and the next prepare revokes everything compare-mode has.
-        if (mountedRef.current) {
-          setStatus((prev) => (prev === "loading" ? "empty" : prev));
+        if (mountedRef.current && revision === compareRevRef.current) {
           setMessage(
             lang === "zh-CN"
               ? "取消请求未确认：旧分享保持禁用；重新比较将立即撤销旧比较。"
               : "Cancel was not confirmed: the previous share stays disabled; the next compare revokes the old one immediately.",
           );
         }
+      })
+      .finally(() => {
+        if (pendingCancelRef.current === pending) pendingCancelRef.current = null;
       });
     pendingCancelRef.current = pending;
   }, [lang]);
@@ -131,11 +131,11 @@ export default function StreamCompare({ lang, gated }: Props) {
    * drops it and exits loading (the run button is usable again), and the
    * server cancel fires once per ready/edit→next-transition. */
   const revoke = useCallback(
-    (fireServer: boolean) => {
+    () => {
       compareRevRef.current += 1;
       if (abortRef.current) abortRef.current.abort();
-      const wasReady = readyRef.current;
-      readyRef.current = false;
+      const runId = runIdRef.current;
+      runIdRef.current = null;
       setCard(null);
       setCompareId(null);
       setInputRevision((r) => r + 1);
@@ -143,19 +143,15 @@ export default function StreamCompare({ lang, gated }: Props) {
       // dropped by the run-identity check and the button is usable again.
       setStatus((prev) => (prev === "loading" ? "empty" : prev));
       setMessage(null);
-      if (fireServer && !isShowcase && (wasReady || runIdRef.current)) {
-        // E03: cancel the current run server-side — it revokes landed and
-        // in-flight results of that run; the next prepare revokes the rest.
-        fireServerCancel();
-        runIdRef.current = null;
-      }
+      if (runId && !isShowcase) fireServerCancel(runId);
     },
     [fireServerCancel],
   );
 
   const onEdit = useCallback(
     (side: Side, value: string) => {
-      revoke(readyRef.current);
+      fileTicketRef.current[side] += 1;
+      revoke();
       if (side === "baseline") setBaselineText(value);
       else setCandidateText(value);
     },
@@ -164,7 +160,8 @@ export default function StreamCompare({ lang, gated }: Props) {
 
   const loadSample = useCallback(
     (side: Side) => {
-      revoke(readyRef.current);
+      fileTicketRef.current[side] += 1;
+      revoke();
       if (side === "baseline") setBaselineText(SAMPLE_BASELINE);
       else setCandidateText(SAMPLE_CANDIDATE);
     },
@@ -173,7 +170,7 @@ export default function StreamCompare({ lang, gated }: Props) {
 
   const clearSide = useCallback(
     (side: Side) => {
-      revoke(readyRef.current);
+      revoke();
       fileTicketRef.current[side] += 1;
       if (fileInputRef.current[side]) fileInputRef.current[side]!.value = "";
       if (side === "baseline") setBaselineText("");
@@ -183,7 +180,7 @@ export default function StreamCompare({ lang, gated }: Props) {
   );
 
   const clearBoth = useCallback(() => {
-    revoke(readyRef.current);
+    revoke();
     fileTicketRef.current.baseline += 1;
     fileTicketRef.current.candidate += 1;
     if (fileInputRef.current.baseline) fileInputRef.current.baseline.value = "";
@@ -196,9 +193,11 @@ export default function StreamCompare({ lang, gated }: Props) {
     (side: Side, files: FileList | null) => {
       const file = files?.[0] ?? null;
       // a new selection starts a new input identity for THIS side
-      fileTicketRef.current[side] += 1;
-      revoke(readyRef.current);
       if (!file) return;
+      const ticket = ++fileTicketRef.current[side];
+      revoke();
+      if (side === "baseline") setBaselineText("");
+      else setCandidateText("");
       const lower = file.name.toLowerCase();
       if (!lower.endsWith(".sse") && !lower.endsWith(".txt")) {
         setMessage(t("formatLabel", lang) + ": .sse / .txt");
@@ -208,13 +207,10 @@ export default function StreamCompare({ lang, gated }: Props) {
         setMessage(t("tooLargeStream", lang));
         return;
       }
-      const ticket = ++fileTicketRef.current[side];
-      const rev = compareRevRef.current;
       const reader = new FileReader();
       reader.onload = () => {
         if (!mountedRef.current) return;
         if (ticket !== fileTicketRef.current[side]) return;
-        if (rev !== compareRevRef.current) return;
         const bytes = new Uint8Array(reader.result as ArrayBuffer);
         const text = new TextDecoder().decode(bytes);
         if (side === "baseline") setBaselineText(text);
@@ -223,7 +219,6 @@ export default function StreamCompare({ lang, gated }: Props) {
       reader.onerror = () => {
         if (!mountedRef.current) return;
         if (ticket !== fileTicketRef.current[side]) return;
-        if (rev !== compareRevRef.current) return;
         setMessage(t("formatLabel", lang) + ": .sse / .txt");
       };
       reader.readAsArrayBuffer(file);
@@ -250,7 +245,7 @@ export default function StreamCompare({ lang, gated }: Props) {
         if (rev !== compareRevRef.current) return;
         setCard(null);
         setCompareId(null);
-        readyRef.current = false;
+        setStatus("error");
         setMessage(
           lang === "zh-CN" ? "结果已失效，请重新比较。" : "The result expired; run the comparison again.",
         );
@@ -282,7 +277,6 @@ export default function StreamCompare({ lang, gated }: Props) {
     if (abortRef.current) abortRef.current.abort();
     const controller = new AbortController();
     abortRef.current = controller;
-    readyRef.current = false;
     setStatus("loading");
     setMessage(null);
     setCard(null);
@@ -290,31 +284,24 @@ export default function StreamCompare({ lang, gated }: Props) {
     // E03 ordering: an in-flight server cancel settles before the prepare so
     // revocation and creation stay ordered; the prepare itself revokes
     // everything the previous run landed, immediately.
-    if (pendingCancelRef.current) {
-      const pending = pendingCancelRef.current;
-      pendingCancelRef.current = null;
-      try {
-        await pending;
-      } catch {
-        /* handled by the cancel error path; the run proceeds fail-closed */
-      }
-    }
-    // E04: after the wait, re-check ownership — an edit during the wait
-    // bumped the revision and this superseded click submits NOTHING.
-    if (rev !== compareRevRef.current || !mountedRef.current) {
-      setStatus((prev) => (prev === "loading" ? "empty" : prev));
-      return;
-    }
+    const previousRun = runIdRef.current;
+    runIdRef.current = null;
+    if (previousRun) fireServerCancel(previousRun);
     try {
+      await pendingCancelRef.current;
+      // A prepare revokes the current server run. Preserve submission order
+      // even if an older prepare response is still in transit.
+      await pendingPrepareRef.current?.catch(() => undefined);
+      if (rev !== compareRevRef.current || !mountedRef.current) return;
       // E03: the server issues this run's identity; the prepare already
       // revoked everything the previous run landed.
-      const prepared = await adapter.prepareCompare();
+      const pending = adapter.prepareCompare();
+      pendingPrepareRef.current = pending;
+      const prepared = await pending.finally(() => {
+        if (pendingPrepareRef.current === pending) pendingPrepareRef.current = null;
+      });
       if (rev !== compareRevRef.current || !mountedRef.current) {
-        // E04: a late prepared identity is cleaned up server-side and must
-        // not interfere with the newer run.
-        runIdRef.current = prepared.run_id;
-        fireServerCancel();
-        runIdRef.current = null;
+        void adapter.cancelCompare(prepared.run_id).catch(() => undefined);
         return;
       }
       const runId = prepared.run_id;
@@ -334,7 +321,6 @@ export default function StreamCompare({ lang, gated }: Props) {
       setCard(outcome.result as unknown as StreamCompareCard);
       setCompareId(outcome.result_id);
       setInputRevision((r) => r + 1);
-      readyRef.current = true;
       setStatus("ready");
     } catch (error) {
       if (rev !== compareRevRef.current || !mountedRef.current) return;
@@ -344,8 +330,9 @@ export default function StreamCompare({ lang, gated }: Props) {
         setStatus((prev) => (prev === "loading" ? "empty" : prev));
         return;
       }
-      readyRef.current = false;
+      const failedRun = runIdRef.current;
       runIdRef.current = null;
+      if (failedRun) void adapter.cancelCompare(failedRun).catch(() => undefined);
       if (isSessionError(error)) {
         setMessage(t("sessionExpired", lang));
       } else if (error instanceof RequestFailed && (error.code === "NO_RESULT" || error.code === "STALE_ANALYSIS")) {
@@ -359,7 +346,7 @@ export default function StreamCompare({ lang, gated }: Props) {
       }
       setStatus("error");
     }
-  }, [baselineText, candidateText, gated, lang]);
+  }, [baselineText, candidateText, fireServerCancel, gated, lang]);
 
   const cardDiffs = card?.differences ?? [];
   const sameFields = (card?.same_fields ?? []).filter(

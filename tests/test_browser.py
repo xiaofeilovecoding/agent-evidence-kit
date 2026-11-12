@@ -826,6 +826,41 @@ class BrowserJourney(unittest.TestCase):
         self.page.unroute("**/api/stream/compare/cancel")
         self.assertEqual(self.console_errors, [])
 
+    def test_compare_waits_for_superseded_prepare(self):
+        self.open_stream_paste()
+        panel = self.view("stream").get_by_test_id("stream-compare")
+        panel.locator("summary").click()
+        panel.get_by_test_id("compare-sample-baseline").click()
+        panel.get_by_test_id("compare-sample-candidate").click()
+
+        held = []
+        requests = []
+
+        def hold_first_prepare(route):
+            requests.append(route)
+            if len(requests) == 1:
+                held.append((route, route.fetch()))
+            else:
+                route.continue_()
+
+        self.page.route("**/api/stream/compare/prepare", hold_first_prepare)
+        run = panel.get_by_test_id("compare-run")
+        run.click()
+        deadline = time.time() + 8
+        while not held and time.time() < deadline:
+            self.page.wait_for_timeout(25)
+        self.assertEqual(len(held), 1)
+        panel.get_by_test_id("compare-baseline-input").fill("data: [DONE]\n\n")
+        run.click()
+        self.page.wait_for_timeout(100)
+        self.assertEqual(len(requests), 1, "a newer prepare waits for the issued identity")
+        route, response = held[0]
+        route.fulfill(response=response)
+        panel.get_by_test_id("compare-result").wait_for(timeout=8000)
+        self.assertEqual(len(requests), 2)
+        self.assertEqual(panel.locator(".share-block, .export-block").count(), 1)
+        self.assertEqual(self.console_errors, [])
+
     def test_compare_side_clear_and_both_clear(self):
         """E02: per-side clear empties only that side; the combined clear
         empties both; the two sides keep distinct file/clear controls."""
