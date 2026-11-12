@@ -68,7 +68,7 @@ class SourceIdentityContract(unittest.TestCase):
     def paste_and_analyze(self, page, module, text=None):
         self.nav(page, "配置检查" if module == "config" else "流结束检查")
         page.locator(f".{module}-module").get_by_role("tab", name="粘贴").click()
-        page.locator(f".{module}-module textarea").fill(
+        page.locator(f".{module}-module .paste-area textarea").fill(
             text
             if text is not None
             else ('{"mcp_servers": {"A": {"command": "x"}}}' if module == "config"
@@ -116,7 +116,7 @@ class SourceIdentityContract(unittest.TestCase):
                 self.nav(page, "配置检查" if module == "config" else "流结束检查")
                 page.locator(f".{module}-module").get_by_role(
                     "tab", name="粘贴").click()
-                page.locator(f".{module}-module textarea").fill(
+                page.locator(f".{module}-module .paste-area textarea").fill(
                     '{"mcp_servers": {"A": {"command": "x"}}}' if module == "config"
                     else "data: [DONE]\n\n"
                 )
@@ -166,7 +166,7 @@ class SourceIdentityContract(unittest.TestCase):
                 page.locator(f".{module}-module").get_by_role(
                     "tab", name="粘贴").click()
                 self.assertEqual(
-                    page.locator(f".{module}-module textarea").input_value(),
+                    page.locator(f".{module}-module .paste-area textarea").input_value(),
                     '{"mcp_servers": {"A": {"command": "x"}}}' if module == "config"
                     else "data: [DONE]\n\n",
                 )
@@ -187,7 +187,7 @@ class SourceIdentityContract(unittest.TestCase):
                 self.nav(page, "配置检查" if module == "config" else "流结束检查")
                 page.locator(f".{module}-module").get_by_role(
                     "tab", name="粘贴").click()
-                page.locator(f".{module}-module textarea").fill(
+                page.locator(f".{module}-module .paste-area textarea").fill(
                     '{"mcp_servers": {"A": {"command": "x"}}}' if module == "config"
                     else "data: [DONE]\n\n"
                 )
@@ -237,7 +237,7 @@ class SourceIdentityContract(unittest.TestCase):
                 # Cached text preserved; a real new analysis succeeds and
                 # is shareable again.
                 self.assertEqual(
-                    page.locator(f".{module}-module textarea").input_value(),
+                    page.locator(f".{module}-module .paste-area textarea").input_value(),
                     '{"mcp_servers": {"A": {"command": "x"}}}' if module == "config"
                     else "data: [DONE]\n\n",
                 )

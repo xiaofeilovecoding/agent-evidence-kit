@@ -102,7 +102,7 @@ class ExportRaces(unittest.TestCase):
         self.page.locator(".sidebar-nav .nav-item").nth(1 if module == "stream" else 0).click()
         view = self.module(module)
         view.locator(".input-pane .segmented button").nth(2).click()
-        view.locator("textarea").fill('{"mcpServers": {}}' if module == "config" else "data: [DONE]\n\n")
+        view.locator(".paste-area textarea").fill('{"mcpServers": {}}' if module == "config" else "data: [DONE]\n\n")
         view.locator(".status-banner.stale").wait_for()
 
     def test_deferred_single_exports_cannot_restore_stale_preview(self):
@@ -154,7 +154,7 @@ class ExportRaces(unittest.TestCase):
                         self.sample(module, 1)
                     else:
                         with self.page.expect_response("**/api/clear") as cleared:
-                            self.module(module).locator(".input-actions button.ghost").click()
+                            self.module(module).locator(".input-pane > .input-actions button.ghost").click()
                         cleared.value.body()
                     self.release(pending, pattern)
                     self.assertEqual(panel.locator('[data-testid="export-preview"]').count(), 0)

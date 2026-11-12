@@ -93,7 +93,7 @@ class R0345SourceSwitch(unittest.TestCase):
     def _paste_and_analyze(self, page, module):
         self.nav(page, "配置检查" if module == "config" else "流结束检查")
         page.locator(f".{module}-module").get_by_role("tab", name="粘贴").click()
-        page.locator(f".{module}-module textarea").fill(
+        page.locator(f".{module}-module .paste-area textarea").fill(
                     '{"mcp_servers": {}}' if module == "config" else "data: [DONE]\n\n"
                 )
         page.get_by_role("button", name="分析配置" if module == "config" else "分析流").click()
@@ -192,7 +192,7 @@ class R0345SourceSwitch(unittest.TestCase):
                 )
                 # The cached paste text is preserved.
                 self.assertEqual(
-                    page.locator(f".{module}-module textarea").input_value(),
+                    page.locator(f".{module}-module .paste-area textarea").input_value(),
                     '{"mcp_servers": {}}' if module == "config" else "data: [DONE]\n\n",
                 )
                 # And the identity is truthful: re-analysis still works.
@@ -237,7 +237,7 @@ class R0345SourceSwitch(unittest.TestCase):
                 )
                 # Cached text preserved; a real new analysis still succeeds.
                 self.assertEqual(
-                    page.locator(f".{module}-module textarea").input_value(),
+                    page.locator(f".{module}-module .paste-area textarea").input_value(),
                     '{"mcp_servers": {}}' if module == "config" else "data: [DONE]\n\n"
                 )
                 page.get_by_role(

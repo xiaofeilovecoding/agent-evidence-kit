@@ -111,7 +111,7 @@ class DemoHoldSourceSwitch(unittest.TestCase):
                     '{"mcp_servers": {"A": {"command": "x"}}}' if module == "config"
                     else "data: [DONE]\n\n"
                 )
-                page.locator(f".{module}-module textarea").fill(cached)
+                page.locator(f".{module}-module .paste-area textarea").fill(cached)
                 # Back to Examples and run a sample with the request held.
                 page.locator(f".{module}-module").get_by_role(
                     "tab", name="示例").click()
@@ -155,7 +155,7 @@ class DemoHoldSourceSwitch(unittest.TestCase):
                 # Cached paste text preserved; a real new analysis works
                 # and is shareable again.
                 self.assertEqual(
-                    page.locator(f".{module}-module textarea").input_value(),
+                    page.locator(f".{module}-module .paste-area textarea").input_value(),
                     cached,
                 )
                 page.locator(f".{module}-module").get_by_role(

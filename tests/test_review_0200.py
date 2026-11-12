@@ -91,7 +91,7 @@ class Review0200Fixes(unittest.TestCase):
     def edit_input(self, page, module):
         self.nav(page, "配置检查" if module == "config" else "流结束检查")
         page.locator(f".{module}-module").get_by_role("tab", name="粘贴").click()
-        page.locator(f".{module}-module textarea").fill(
+        page.locator(f".{module}-module .paste-area textarea").fill(
             '{"mcp_servers": {}}' if module == "config" else "data: [DONE]\n\n"
         )
         page.wait_for_selector(f".{module}-module .status-banner.stale")
@@ -128,7 +128,7 @@ class Review0200Fixes(unittest.TestCase):
         page = self.page
         self.run_sample(page, "config")
         page.locator(".config-module").get_by_role("tab", name="粘贴").click()
-        page.locator(".config-module textarea").fill("x" * (300 * 1024))
+        page.locator(".config-module .paste-area textarea").fill("x" * (300 * 1024))
         page.get_by_role("button", name="分析配置").click()
         page.wait_for_selector(".config-module .status-banner.error")
         panel = self.panel(page, "config")
@@ -254,7 +254,7 @@ class Review0200Fixes(unittest.TestCase):
             "tab", name="文件"
         ).click()
         page.locator(".config-module .dropzone .primary").click()
-        page.locator('input[type="file"]').set_input_files(
+        page.locator('.dropzone input[type="file"]').set_input_files(
             {
                 "name": "synthetic-old.json",
                 "mimeType": "application/json",
@@ -265,7 +265,7 @@ class Review0200Fixes(unittest.TestCase):
         # Defer all subsequent file reads, then clear while a re-selected
         # file read is pending.
         page.evaluate("() => window.__deferFileReads()")
-        page.locator('input[type="file"]').set_input_files(
+        page.locator('.dropzone input[type="file"]').set_input_files(
             {
                 "name": "synthetic-late.json",
                 "mimeType": "application/json",
@@ -329,7 +329,7 @@ class Review0200Fixes(unittest.TestCase):
         self.nav(page, "配置检查")
         page.locator(".config-module").get_by_role("tab", name="粘贴").click()
         toml = '[mcp_servers.synthetic]\ncommand = "python"\n'
-        page.locator(".config-module textarea").fill(toml)
+        page.locator(".config-module .paste-area textarea").fill(toml)
         self.assertIn(
             "TOML",
             page.inner_text(".config-module .format-row"),
@@ -343,7 +343,7 @@ class Review0200Fixes(unittest.TestCase):
         page = self.page
         self.nav(page, "配置检查")
         page.locator(".config-module").get_by_role("tab", name="粘贴").click()
-        page.locator(".config-module textarea").fill('[{"mcpServers": {}}]')
+        page.locator(".config-module .paste-area textarea").fill('[{"mcpServers": {}}]')
         self.assertIn("JSON", page.inner_text(".config-module .format-row"))
         page.get_by_role("button", name="分析配置").click()
         page.wait_for_selector(".config-module .result-error")
