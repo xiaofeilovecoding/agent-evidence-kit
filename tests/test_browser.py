@@ -275,7 +275,7 @@ class BrowserJourney(unittest.TestCase):
         self.page.locator(".sidebar-nav .nav-item", has_text="流结束检查").click()
         self.view("stream").get_by_role("tab", name="粘贴").click()
         stream = helpers.chunk("OK") * 120 + helpers.chunk(finish="stop") + helpers.done()
-        self.view("stream").locator("textarea").fill(stream)
+        self.view("stream").locator(".paste-area textarea").fill(stream)
         self.view("stream").get_by_role("button", name="分析流").click()
         self.wait_view("stream")
         rows = self.view("stream").locator(".timeline-list li")
@@ -303,7 +303,7 @@ class BrowserJourney(unittest.TestCase):
         self.page.locator(".sidebar-nav .nav-item", has_text="流结束检查").click()
         self.view("stream").get_by_role("tab", name="粘贴").click()
         stream = helpers.chunk("OK") + 'data: {"vendor_field": 1}\n\n'
-        self.view("stream").locator("textarea").fill(stream)
+        self.view("stream").locator(".paste-area textarea").fill(stream)
         self.view("stream").get_by_role("button", name="分析流").click()
         self.wait_view("stream")
         self.assertIn("UNSUPPORTED_PROFILE", self.page.inner_text("body"))
@@ -319,7 +319,7 @@ class BrowserJourney(unittest.TestCase):
         self.assertIn("正常结束", self.view("stream").locator(".compare-wide").inner_text())
         # Editing input marks result stale; re-analysis refreshes it.
         self.view("stream").get_by_role("tab", name="粘贴").click()
-        self.view("stream").locator("textarea").fill("data: 1\n\n")
+        self.view("stream").locator(".paste-area textarea").fill("data: 1\n\n")
         self.view("stream").locator(".status-banner.stale").wait_for()
         self.view("stream").get_by_role("button", name="分析流").click()
         self.wait_view("stream")
@@ -331,7 +331,7 @@ class BrowserJourney(unittest.TestCase):
         self.page.goto(BASE)
         self.page.locator(".sidebar-nav .nav-item", has_text="流结束检查").click()
         self.view("stream").get_by_role("tab", name="粘贴").click()
-        self.view("stream").locator("textarea").fill(
+        self.view("stream").locator(".paste-area textarea").fill(
             'data: {"choices": [{"index": 0, "delta": {"content": "'
             + CANARY
             + '"}}]}\n\n'
@@ -495,7 +495,7 @@ class BrowserJourney(unittest.TestCase):
         self.page.goto(BASE)
         self.page.locator(".sidebar-nav .nav-item", has_text="流结束检查").click()
         self.view("stream").get_by_role("tab", name="粘贴").click()
-        self.view("stream").locator("textarea").fill("x" * (9 * 1024 * 1024 // 1))
+        self.view("stream").locator(".paste-area textarea").fill("x" * (9 * 1024 * 1024 // 1))
         self.view("stream").get_by_role("button", name="分析流").click()
         self.view("stream").locator(".status-banner.error").wait_for()
         self.assertIn("8MiB", self.view("stream").locator(".status-banner.error").inner_text())
@@ -589,6 +589,300 @@ class BrowserJourney(unittest.TestCase):
         narrow.wait_for_selector(".config-module .service-body")
         narrow.screenshot(path=str(shots / "narrow-390-config-expanded.png"), full_page=True)
         context.close()
+
+
+    # ---- stream compare (baseline vs candidate) ----
+
+    def open_stream_paste(self):
+        self.page.goto(BASE)
+        self.page.locator(".sidebar-nav .nav-item", has_text="流结束检查").click()
+        self.view("stream").get_by_role("tab", name="粘贴").click()
+
+    def test_compare_390_layout_and_sample_buttons(self):
+        """E3: on-demand expand; 390px stacks vertically without overflow;
+        the two sample buttons have distinct accessible names; the run
+        control is tab-reachable."""
+        self.open_stream_paste()
+        compare = self.view("stream").locator('[data-testid="stream-compare"]')
+        compare.locator("summary").click()
+        # two distinct sample buttons
+        base_btn = compare.get_by_role("button", name="载入正常样例 → 基线")
+        cand_btn = compare.get_by_role("button", name="载入上游错误样例 → 候选")
+        self.assertTrue(base_btn.count() == 1, "baseline sample button present")
+        self.assertTrue(cand_btn.count() == 1, "candidate sample button has a distinct name")
+        base_btn.click()
+        cand_btn.click()
+        baseline_box = compare.locator('[data-testid="compare-baseline-input"]')
+        candidate_box = compare.locator('[data-testid="compare-candidate-input"]')
+        self.assertNotEqual(baseline_box.input_value(), candidate_box.input_value())
+        # run control is keyboard reachable (tab order includes it)
+        compare.locator('[data-testid="compare-run"]').focus()
+        self.assertTrue(
+            self.page.evaluate("document.activeElement.dataset['testid'] === 'compare-run'"),
+            "compare run button focusable",
+        )
+        compare.locator('[data-testid="compare-run"]').click()
+        compare.locator('[data-testid="compare-result"]').wait_for(timeout=15000)
+        diffs = compare.locator(".compare-diff-row")
+        self.assertGreaterEqual(diffs.count(), 1)
+        first_field = diffs.first.get_attribute("data-field")
+        self.assertEqual(first_field, "terminal", "terminal difference first in the web preview")
+        # narrow viewport: the two columns stack vertically, no horizontal overflow
+        context = self.browser.new_context(
+            viewport={"width": 390, "height": 844}, locale="zh-CN"
+        )
+        narrow = context.new_page()
+        narrow.goto(BASE)
+        narrow.get_by_role("tab", name="流结束检查").click()
+        ncompare = narrow.locator('[data-testid="stream-compare"]')
+        ncompare.locator("summary").click()
+        boxes = ncompare.locator(".compare-side")
+        self.assertEqual(boxes.count(), 2)
+        top_a = boxes.nth(0).bounding_box()
+        top_b = boxes.nth(1).bounding_box()
+        self.assertLessEqual(
+            abs(top_a["x"] - top_b["x"]), 2,
+            "two columns stack vertically at 390px",
+        )
+        self.assertGreater(top_b["y"], top_a["y"])
+        body_width = narrow.evaluate("document.documentElement.scrollWidth")
+        self.assertLessEqual(body_width, 391, "no horizontal overflow at 390px")
+        context.close()
+        self.assertEqual(self.console_errors, [])
+
+    def test_compare_survives_page_refresh(self):
+        """E03 (the reported defect): a successful comparison, then a page
+        reload, then comparing again must succeed — the run identity is
+        server-issued and never re-counted client-side."""
+        self.open_stream_paste()
+        compare = self.view("stream").locator('[data-testid="stream-compare"]')
+        compare.locator("summary").click()
+        compare.get_by_role("button", name="载入正常样例 → 基线").click()
+        compare.get_by_role("button", name="载入上游错误样例 → 候选").click()
+        compare.locator('[data-testid="compare-run"]').click()
+        compare.locator('[data-testid="compare-result"]').wait_for(timeout=15000)
+        # refresh: same session cookie, fresh page state
+        self.page.reload()
+        self.open_stream_paste()
+        compare = self.view("stream").locator('[data-testid="stream-compare"]')
+        compare.locator("summary").click()
+        compare.get_by_role("button", name="载入正常样例 → 基线").click()
+        compare.get_by_role("button", name="载入上游错误样例 → 候选").click()
+        compare.locator('[data-testid="compare-run"]').click()
+        compare.locator('[data-testid="compare-result"]').wait_for(timeout=15000)
+        diffs = compare.locator(".compare-diff-row")
+        self.assertGreaterEqual(diffs.count(), 1, "the refreshed run compares cleanly")
+        self.assertEqual(self.console_errors, [])
+
+    def test_compare_edit_during_wait_cancels_server_side(self):
+        """E03: hold the real compare response, edit one side — the cancel
+        is issued server-side (the run dies even without a client response);
+        releasing the old response cannot revive anything, and the next run
+        prepares a fresh identity and lands."""
+        self.open_stream_paste()
+        compare = self.view("stream").locator('[data-testid="stream-compare"]')
+        compare.locator("summary").click()
+        compare.get_by_role("button", name="载入正常样例 → 基线").click()
+        compare.get_by_role("button", name="载入上游错误样例 → 候选").click()
+        held: list[object] = []
+        self.page.route(
+            "**/api/stream/compare",
+            lambda route: held.append(route),
+        )
+        compare.locator('[data-testid="compare-run"]').click()
+        deadline = time.time() + 10
+        while not held and time.time() < deadline:
+            self.page.wait_for_timeout(50)
+        self.assertTrue(held, "compare request captured in flight")
+        compare.locator('[data-testid="compare-baseline-input"]').fill(
+            'data: {"choices": [{"index": 0, "delta": {"content": "edited"}}]}'
+            + chr(10) * 2
+        )
+        self.page.wait_for_timeout(500)  # let the edit-triggered cancel settle
+        for route in held:
+            route.continue_()
+        self.page.wait_for_timeout(500)
+        self.assertEqual(
+            compare.locator('[data-testid="compare-result"]').count(), 0,
+            "stale compare result must not apply after an edit",
+        )
+        self.page.unroute("**/api/stream/compare")
+        run_btn = compare.locator('[data-testid="compare-run"]')
+        self.assertTrue(run_btn.is_enabled(), "run button usable after the stale race")
+        run_btn.click()
+        compare.locator('[data-testid="compare-result"]').wait_for(timeout=15000)
+        new_share = compare.locator(".share-block, .export-block")
+        self.assertEqual(new_share.count(), 1, "the new comparison is shareable")
+        self.assertEqual(self.console_errors, [])
+
+    def test_compare_edit_inflight_response_never_revives_share(self):
+        """E3: hold the compare response in flight, edit one side, release the
+        old response — the stale comparison and its share must not come back."""
+        self.open_stream_paste()
+        compare = self.view("stream").locator('[data-testid="stream-compare"]')
+        compare.locator("summary").click()
+        compare.get_by_role("button", name="载入正常样例 → 基线").click()
+        compare.get_by_role("button", name="载入上游错误样例 → 候选").click()
+        # hold the /api/stream/compare response
+        held: list[object] = []
+        self.page.route(
+            "**/api/stream/compare",
+            lambda route: held.append(route),
+        )
+        compare.locator('[data-testid="compare-run"]').click()
+        deadline = time.time() + 10
+        while not held and time.time() < deadline:
+            self.page.wait_for_timeout(50)
+        self.assertTrue(held, "compare request captured in flight")
+        # edit one side while the old response is still held: the UI revokes
+        edited_stream = (
+            'data: {"choices": [{"index": 0, "delta": {"content": "edited"}}]}'
+            + chr(10) * 2
+        )
+        compare.locator('[data-testid="compare-baseline-input"]').fill(edited_stream)
+        self.page.wait_for_timeout(400)  # let the edit-triggered clear settle
+        # release the stale response
+        for route in held:
+            route.continue_()
+        self.page.wait_for_timeout(500)
+        self.assertEqual(
+            compare.locator('[data-testid="compare-result"]').count(), 0,
+            "stale compare result must not apply after an edit",
+        )
+        share = compare.locator(".share-block, .export-block")
+        self.assertEqual(share.count(), 0, "no share affordance for the revoked comparison")
+        self.page.unroute("**/api/stream/compare")
+        # E01: the run button left loading — a fresh comparison can start
+        # immediately and the new result is shareable
+        run_btn = compare.locator('[data-testid="compare-run"]')
+        self.assertTrue(run_btn.is_enabled(), "run button usable after the stale race")
+        run_btn.click()
+        compare.locator('[data-testid="compare-result"]').wait_for(timeout=15000)
+        new_share = compare.locator(".share-block, .export-block")
+        self.assertEqual(new_share.count(), 1, "the new comparison is shareable")
+        self.assertEqual(self.console_errors, [])
+
+    def test_compare_superseded_click_never_submits_stale_inputs(self):
+        """E04 (the reported defect): ready result → cancel held → compare
+        clicked → baseline edited again → cancel released — the superseded
+        click must submit NOTHING (no prepare), and a fresh click lands a
+        new comparison that is shareable."""
+        self.open_stream_paste()
+        compare = self.view("stream").locator('[data-testid="stream-compare"]')
+        compare.locator("summary").click()
+        compare.get_by_role("button", name="载入正常样例 → 基线").click()
+        compare.get_by_role("button", name="载入上游错误样例 → 候选").click()
+        compare.locator('[data-testid="compare-run"]').click()
+        compare.locator('[data-testid="compare-result"]').wait_for(timeout=15000)
+        # hold every prepare and cancel from here on, counting prepares
+        held_cancels: list[object] = []
+        prepare_calls: list[int] = [0]
+        self.page.route("**/api/stream/compare/prepare", lambda route: (
+            prepare_calls.__setitem__(0, prepare_calls[0] + 1),
+            route.continue_(),
+        ))
+        self.page.route(
+            "**/api/stream/compare/cancel",
+            lambda route: held_cancels.append(route),
+        )
+        # the first edit fires a cancel request, which we hold
+        compare.locator('[data-testid="compare-baseline-input"]').fill(
+            'data: {"choices": [{"index": 0, "delta": {"content": "first edit"}}]}'
+            + chr(10) * 2
+        )
+        deadline = time.time() + 10
+        while not held_cancels and time.time() < deadline:
+            self.page.wait_for_timeout(50)
+        self.assertTrue(held_cancels, "cancel captured in flight")
+        # the user clicks compare while the cancel is still held; the click
+        # waits on the cancel before it could ever prepare
+        compare.locator('[data-testid="compare-run"]').click()
+        self.page.wait_for_timeout(120)
+        # the user edits AGAIN during the wait: this supersedes the click
+        compare.locator('[data-testid="compare-baseline-input"]').fill(
+            'data: {"choices": [{"index": 0, "delta": {"content": "second edit"}}]}'
+            + chr(10) * 2
+        )
+        # release the held cancel: the superseded click must submit nothing
+        for route in held_cancels:
+            route.continue_()
+        self.page.wait_for_timeout(700)
+        self.assertEqual(
+            prepare_calls[0], 0,
+            "the superseded click submitted nothing (prepare routes installed after run 1)",
+        )
+        self.assertEqual(
+            compare.locator('[data-testid="compare-result"]').count(), 0,
+            "no stale comparison appeared",
+        )
+        # a fresh click prepares a new run and lands a shareable result
+        run_btn = compare.locator('[data-testid="compare-run"]')
+        self.assertTrue(run_btn.is_enabled(), "run button usable after supersede")
+        run_btn.click()
+        compare.locator('[data-testid="compare-result"]').wait_for(timeout=15000)
+        self.assertEqual(prepare_calls[0], 1, "the fresh click prepared exactly one new run")
+        self.assertEqual(compare.locator(".share-block, .export-block").count(), 1)
+        self.page.unroute("**/api/stream/compare/prepare")
+        self.page.unroute("**/api/stream/compare/cancel")
+        self.assertEqual(self.console_errors, [])
+
+    def test_compare_waits_for_superseded_prepare(self):
+        self.open_stream_paste()
+        panel = self.view("stream").get_by_test_id("stream-compare")
+        panel.locator("summary").click()
+        panel.get_by_test_id("compare-sample-baseline").click()
+        panel.get_by_test_id("compare-sample-candidate").click()
+
+        held = []
+        requests = []
+
+        def hold_first_prepare(route):
+            requests.append(route)
+            if len(requests) == 1:
+                held.append((route, route.fetch()))
+            else:
+                route.continue_()
+
+        self.page.route("**/api/stream/compare/prepare", hold_first_prepare)
+        run = panel.get_by_test_id("compare-run")
+        run.click()
+        deadline = time.time() + 8
+        while not held and time.time() < deadline:
+            self.page.wait_for_timeout(25)
+        self.assertEqual(len(held), 1)
+        panel.get_by_test_id("compare-baseline-input").fill("data: [DONE]\n\n")
+        run.click()
+        self.page.wait_for_timeout(100)
+        self.assertEqual(len(requests), 1, "a newer prepare waits for the issued identity")
+        route, response = held[0]
+        route.fulfill(response=response)
+        panel.get_by_test_id("compare-result").wait_for(timeout=8000)
+        self.assertEqual(len(requests), 2)
+        self.assertEqual(panel.locator(".share-block, .export-block").count(), 1)
+        self.assertEqual(self.console_errors, [])
+
+    def test_compare_side_clear_and_both_clear(self):
+        """E02: per-side clear empties only that side; the combined clear
+        empties both; the two sides keep distinct file/clear controls."""
+        self.open_stream_paste()
+        compare = self.view("stream").locator('[data-testid="stream-compare"]')
+        compare.locator("summary").click()
+        compare.get_by_role("button", name="载入正常样例 → 基线").click()
+        compare.get_by_role("button", name="载入上游错误样例 → 候选").click()
+        base_box = compare.locator('[data-testid="compare-baseline-input"]')
+        cand_box = compare.locator('[data-testid="compare-candidate-input"]')
+        self.assertNotEqual(base_box.input_value(), "")
+        self.assertNotEqual(cand_box.input_value(), "")
+        # per-side clear touches only that side
+        compare.locator('[data-testid="compare-clear-baseline"]').click()
+        self.assertEqual(base_box.input_value(), "", "baseline cleared alone")
+        self.assertNotEqual(cand_box.input_value(), "", "candidate untouched")
+        compare.locator('[data-testid="compare-clear-candidate"]').click()
+        self.assertEqual(cand_box.input_value(), "", "candidate cleared alone")
+        # distinct file controls exist per side
+        self.assertEqual(compare.locator('[data-testid="compare-file-baseline"]').count(), 1)
+        self.assertEqual(compare.locator('[data-testid="compare-file-candidate"]').count(), 1)
+        self.assertEqual(self.console_errors, [])
 
 
 if __name__ == "__main__":

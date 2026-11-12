@@ -118,7 +118,7 @@ class PublicReadyJourneys(unittest.TestCase):
 
         # New input typed after the failure must survive the retry.
         page.locator(".stream-module").get_by_role("tab", name="粘贴").click()
-        page.locator(".stream-module textarea").fill("data: 1\n\n")
+        page.locator(".stream-module .paste-area textarea").fill("data: 1\n\n")
         page.unroute("**/api/clear")
         page.locator(".stream-module").get_by_role("button", name="重试清空").click()
         with page.expect_response("**/api/clear") as cleared:
@@ -126,7 +126,7 @@ class PublicReadyJourneys(unittest.TestCase):
         cleared.value.body()
         page.wait_for_selector(".stream-module .clear-banner:not(.error)")
         self.assertIn("本机会话结果已清空", page.inner_text("body"))
-        self.assertEqual(page.locator(".stream-module textarea").input_value(), "data: 1\n\n")
+        self.assertEqual(page.locator(".stream-module .paste-area textarea").input_value(), "data: 1\n\n")
 
     def test_clear_is_session_scoped(self):
         page_a = self.new_page()
@@ -296,7 +296,7 @@ class PublicReadyJourneys(unittest.TestCase):
         page = self.new_page()
         page.locator(".sidebar-nav .nav-item", has_text="流结束检查").click()
         page.locator(".stream-module").get_by_role("tab", name="粘贴").click()
-        page.locator(".stream-module textarea").fill(
+        page.locator(".stream-module .paste-area textarea").fill(
             'data: {"choices": [{"index": 0, "delta": {"content": "'
             + helpers.CANARY_S_TEXT + '"}}]}\n\n'
         )

@@ -144,6 +144,7 @@ class _Obs:
         "index",
         "kind",
         "finish_kind",
+        "finish_enum",
         "has_content",
         "has_tool_calls",
         "codes",
@@ -153,6 +154,10 @@ class _Obs:
         self.index = index
         self.kind = kind  # chunk/finish/usage/done/error/unsupported
         self.finish_kind: str | None = None
+        # Controlled finish_reason category for comparisons: one of the
+        # recognized values, "other" for an unrecognized non-null value, or
+        # None when this event carried no finish. Raw values never surface.
+        self.finish_enum: str | None = None
         self.has_content = False
         self.has_tool_calls = False
         self.codes: list[str] = []
@@ -252,9 +257,11 @@ class _Analysis:
         if not isinstance(finish, str) or finish not in SUPPORTED_FINISH:
             self.add(obs.index, "UNSUPPORTED_FINISH")
             obs.kind = "unsupported"
+            obs.finish_enum = "other"  # unknown reason text never enters comparisons
             return
         obs.kind = "finish"
         obs.finish_kind = FINISH_KIND[finish]
+        obs.finish_enum = finish
 
 
 def analyze_events(events, unterminated_tail: bool) -> dict:
@@ -382,6 +389,7 @@ def analyze_events(events, unterminated_tail: bool) -> dict:
                 "index": o.index,
                 "kind": o.kind,
                 "finish_kind": o.finish_kind,
+                "finish_enum": o.finish_enum,
                 "has_content": o.has_content,
                 "has_tool_calls": o.has_tool_calls,
                 "diagnostic_codes": list(o.codes),

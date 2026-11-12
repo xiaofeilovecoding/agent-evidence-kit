@@ -10,6 +10,7 @@ import type { ModuleStatus } from "./App";
 import EvidenceMark from "./EvidenceMark";
 import ShareBlock from "./ShareBlock";
 import FindingGuidance from "./FindingGuidance";
+import StreamCompare from "./StreamCompare";
 
 type Status = "empty" | "loading" | "ready" | "stale" | "error";
 
@@ -798,6 +799,7 @@ export default function StreamModule({
           <span>{t("clearSuccess", lang)}</span>
         </div>
       )}
+      <StreamCompare lang={lang} gated={gated} />
     </section>
   );
 

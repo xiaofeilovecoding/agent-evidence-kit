@@ -12,7 +12,18 @@ export interface DataAdapter {
     format: "json" | "toml" | null,
     lang: Lang,
     signal?: AbortSignal,
+    slot?: "current" | "baseline" | "candidate",
+    runId?: string,
   ): Promise<AnalysisOutcome>;
+  prepareCompare(): Promise<{ run_id: string }>;
+  compareStream(
+    baselineId: string,
+    candidateId: string,
+    lang: Lang,
+    runId: string,
+    signal?: AbortSignal,
+  ): Promise<AnalysisOutcome>;
+  cancelCompare(runId: string): Promise<void>;
   rerender(resultId: string, lang: Lang): Promise<Card>;
   export(resultId: string, lang: Lang, format: "json" | "md"): Promise<ExportPayload>;
   exportCombined(
@@ -123,7 +134,7 @@ export function createApiAdapter(): DataAdapter {
     async runDemo(module, caseId, lang) {
       return postJson(`/api/${module}/demo`, { case_id: caseId, lang });
     },
-    async analyzeBytes(module, data, format, lang, signal) {
+    async analyzeBytes(module, data, format, lang, signal, slot, runId) {
       return withRecovery(async (_retry) => {
         await ensureSession();
         const headers: Record<string, string> = {
@@ -131,12 +142,42 @@ export function createApiAdapter(): DataAdapter {
           "X-CSRF-Token": csrf ?? "",
         };
         if (module === "config") headers["X-Input-Format"] = format ?? "json";
-        const response = await fetch(`/api/${module}/analyze?lang=${lang}`, {
+        const slotParam = slot ? `&slot=${slot}` : "";
+        const runParam = runId ? `&run_id=${encodeURIComponent(runId)}` : "";
+        const response = await fetch(`/api/${module}/analyze?lang=${lang}${slotParam}${runParam}`, {
           method: "POST",
           credentials: "same-origin",
           signal,
           headers,
           body: data as unknown as BodyInit,
+        });
+        if (!response.ok) await readError(response);
+        return (await response.json()) as AnalysisOutcome;
+      });
+    },
+    async prepareCompare() {
+      return postJson<{ run_id: string }>("/api/stream/compare/prepare", {});
+    },
+    async cancelCompare(runId) {
+      await postJson("/api/stream/compare/cancel", { run_id: runId });
+    },
+    async compareStream(baselineId, candidateId, lang, runId, signal) {
+      return withRecovery(async (_retry) => {
+        await ensureSession();
+        const response = await fetch("/api/stream/compare", {
+          method: "POST",
+          credentials: "same-origin",
+          signal,
+          headers: {
+            "Content-Type": "application/json",
+            "X-CSRF-Token": csrf ?? "",
+          },
+          body: JSON.stringify({
+            baseline: baselineId,
+            candidate: candidateId,
+            lang,
+            run_id: runId,
+          }),
         });
         if (!response.ok) await readError(response);
         return (await response.json()) as AnalysisOutcome;

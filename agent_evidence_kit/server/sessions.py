@@ -25,6 +25,9 @@ COOKIE_NAME = "aek_session"
 CSRF_HEADER = "X-CSRF-Token"
 
 MODULES = ("config", "stream")
+# The stream module keeps single-analysis plus compare-mode slots
+# (current / baseline / candidate / compare) under the same projection cap.
+MAX_SLOTS_PER_MODULE_STREAM = 4
 MAX_BODY_BYTES = 8 * 1024 * 1024
 
 
@@ -56,6 +59,22 @@ class _Session:
         # Generation counter per module: clear() bumps it atomically, so an
         # in-flight analysis started before the clear can no longer land.
         self.generation: dict[str, int] = {m: 0 for m in MODULES}
+        # Compare mode keeps its own generation so revoking the two compare
+        # sides and the comparison never disturbs a confirmed single-stream
+        # result (E02: isolation; revocation and the next compare run are
+        # ordered by this counter).
+        self.compare_generation = 0
+        # E03: compare identity is SERVER-ISSUED. prepareCompare hands out a
+        # run_id and revokes everything compare-mode landed before it, so the
+        # identity survives page refreshes and is never re-counted client-side
+        # (a refreshed tab cannot collide with stale session state).
+        self.compare_run_id: str | None = None
+        # which run each compare-mode slot belongs to, and which exact result
+        # id was landed for it (E04: the comparison must read exactly the
+        # sides of the current run, never an arbitrary stream slot)
+        self.compare_side_run: dict[str, str] = {}
+        self.compare_side_result: dict[str, str] = {}
+        self.compare_result_run: str | None = None
         self.in_flight = 0
         self.lock = threading.Lock()
 

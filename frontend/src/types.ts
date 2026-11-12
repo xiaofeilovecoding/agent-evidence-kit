@@ -127,3 +127,35 @@ export interface ExportPayload {
   content_type: string;
   content: string;
 }
+
+// ---- stream compare card (schema_version 1, kind stream-compare) ----
+
+export interface CompareSide {
+  verdict: string;
+  terminal: string | null;
+  finish_reason: string;
+  done_seen: boolean;
+  finish_seen: boolean;
+  terminal_event_index: number | null;
+  event_count: number;
+  diagnostic_codes: { code: string; severity: string; event_index: number | null }[];
+}
+
+export interface CompareDifference {
+  field: string;
+  baseline: unknown;
+  candidate: unknown;
+}
+
+export interface StreamCompareCard {
+  schema_version: 1;
+  kind: "stream-compare";
+  profile: string;
+  language: string;
+  baseline: CompareSide;
+  candidate: CompareSide;
+  differences: CompareDifference[];
+  same_fields: string[];
+  note: string;
+  note_text?: string;
+}
