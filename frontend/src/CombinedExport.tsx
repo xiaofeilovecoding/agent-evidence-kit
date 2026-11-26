@@ -1,3 +1,4 @@
+import { ExportDocument } from "./ExportDocument";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ExportPayload, Lang, ModuleId } from "./types";
 import { t } from "./i18n";
@@ -166,7 +167,7 @@ export default function CombinedExport({ lang, statuses }: Props) {
                   <li>{t("limitsNote", lang)}</li>
                 </ul>
               </div>
-              <pre data-testid="combined-export-preview">{preview.content}</pre>
+              <ExportDocument preview={preview} lang={lang} testId="combined-export-preview" />
               <div className="share-actions">
                 <button
                   className={copyState === "copied" ? "primary copied" : "primary"}

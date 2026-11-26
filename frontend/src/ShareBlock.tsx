@@ -1,3 +1,4 @@
+import { ExportDocument } from "./ExportDocument";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { adapter } from "./adapter";
 import { useExportPreview } from "./useExportPreview";
@@ -101,7 +102,7 @@ export default function ShareBlock({
       <p className="share-note">{t("shareNote", lang)}</p>
       {preview && (
         <div className="share-preview">
-          <pre data-testid="export-preview">{preview.content}</pre>
+          <ExportDocument preview={preview} lang={lang} testId="export-preview" />
           <div className="share-actions">
             <button
               className={copyState === "copied" ? "primary copied" : "primary"}
