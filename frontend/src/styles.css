@@ -1158,10 +1158,30 @@ h3 {
   min-width: 0;
 }
 
+.export-document {
+  border: 1px solid var(--divider);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+.export-document-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--divider);
+  background: var(--surface);
+}
+.export-document-name { display: grid; gap: 2px; min-width: 0; overflow-wrap: anywhere; }
+.export-document-name strong { font-size: 13px; }
+.export-document-name small { color: var(--text-secondary); font-variant-numeric: tabular-nums; }
+.export-document-bar button[aria-pressed="true"] { color: var(--primary); border-color: var(--primary); }
+.export-document pre[data-wrap="false"] { white-space: pre; overflow-wrap: normal; }
+.export-document pre:focus-visible { outline: 2px solid var(--primary); outline-offset: -3px; }
 .share-preview pre {
   background: var(--canvas);
-  border: 1px solid var(--divider);
-  border-radius: 10px;
+  border: 0;
   padding: 12px;
   font-size: 13px;
   font-family: Consolas, "Courier New", monospace;

@@ -187,6 +187,12 @@ class BrowserJourney(unittest.TestCase):
         self.result_panel("config").get_by_role("button", name="导出预览").click()
         self.result_panel("config").locator('[data-testid="export-preview"]').wait_for()
         preview = self.result_panel("config").locator('[data-testid="export-preview"]').inner_text()
+        document = self.result_panel("config").locator(".export-document")
+        wrap = document.get_by_role("button", name="自动换行")
+        wrap.click()
+        self.assertEqual(document.locator("pre").evaluate("(e) => getComputedStyle(e).whiteSpace"), "pre")
+        self.assertEqual(document.locator("pre").text_content(), preview)
+        self.assertEqual(document.locator("small").inner_text(), f"{len(preview.encode('utf-8')):,} 字节")
         self.assertIn("Agent 配置证据卡", preview)
         self.assertNotIn(helpers.CANARY_KEY, preview)
         with self.page.expect_download() as download_info:
